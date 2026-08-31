@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Login",
+        "title": "Focuser",
         "width": 500,
         "height": 800,
         "resizable": true

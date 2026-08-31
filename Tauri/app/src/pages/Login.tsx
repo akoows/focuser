@@ -1,7 +1,6 @@
 import logo from "../assets/focuserLogo.png";
 import "./Login.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
 
 type LoginPageProps = {
   onLogin: () => void;
@@ -23,10 +22,12 @@ function LoginPage({ onLogin }: LoginPageProps) {
     if (email === "admin" && password === "admin") {
       console.log("Login correto!");
 
-      const appWindow = getCurrentWindow();
-      await appWindow.setResizable(true);
-      await appWindow.setSize(new LogicalSize(1280, 820));
-      await appWindow.center();
+      try {
+        const appWindow = getCurrentWindow();
+        await appWindow.maximize();
+      } catch (error) {
+        console.error("Erro ao maximizar a janela:", error);
+      }
 
       onLogin();
     } else {
