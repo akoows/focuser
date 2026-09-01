@@ -9,13 +9,13 @@
 <h1 align="center">Focuser</h1>
 
 <p align="center">
-  <img alt="Github top language" src="https://img.shields.io/github/languages/top/{{akoows}}/focuser?color=56BEB8">
+  <img alt="Github top language" src="https://img.shields.io/github/languages/top/akoows/focuser?color=56BEB8">
 
-  <img alt="Github language count" src="https://img.shields.io/github/languages/count/{{akoows}}/focuser?color=56BEB8">
+  <img alt="Github language count" src="https://img.shields.io/github/languages/count/akoows/focuser?color=56BEB8">
 
-  <img alt="Repository size" src="https://img.shields.io/github/repo-size/{{akoows}}/focuser?color=56BEB8">
+  <img alt="Repository size" src="https://img.shields.io/github/repo-size/akoows/focuser?color=56BEB8">
 
-  <img alt="License" src="https://img.shields.io/github/license/{{akoows}}/focuser?color=56BEB8">
+  <img alt="License" src="https://img.shields.io/github/license/akoows/focuser?color=56BEB8">
 
   <!-- <img alt="Github issues" src="https://img.shields.io/github/issues/{{YOUR_GITHUB_USERNAME}}/focuser?color=56BEB8" /> -->
 
@@ -65,7 +65,7 @@ The following tools were used in this project:
 This project is under license from MIT. For more details, see the [LICENSE](LICENSE.md) file.
 
 
-Made with :heart: by <a href="https://github.com/{{akoows}}" target="_blank">{{akoows}}</a>
+Made with :heart: by <a href="https://github.com/{{akoows}}" target="_blank">akoows</a>
 
 &#xa0;
 
