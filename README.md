@@ -6,7 +6,7 @@
   <!-- <a href="https://focuser.netlify.app">Demo</a> -->
 </div>
 
-<h1 align="center">Focuser</h1>
+<img src="./src/images/logo.png">
 
 <p align="center">
   <img alt="Github top language" src="https://img.shields.io/github/languages/top/akoows/focuser?color=56BEB8">
@@ -65,8 +65,6 @@ The following tools were used in this project:
 This project is under license from MIT. For more details, see the [LICENSE](LICENSE.md) file.
 
 
-Made with :heart: by <a href="https://github.com/{{akoows}}" target="_blank">akoows</a>
+Made with :heart: by <a href="https://github.com/akoows" target="_blank">akoows</a>
 
 &#xa0;
-
-<a href="#top">Back to top</a>
