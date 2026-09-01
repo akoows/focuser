@@ -2,37 +2,27 @@
   <img src="./.github/app.gif" alt="Focuser" />
 
   &#xa0;
-
-  <!-- <a href="https://focuser.netlify.app">Demo</a> -->
 </div>
 
 <img src="./src/images/logo.png">
 
 <p align="center">
-  <img alt="Github top language" src="https://img.shields.io/github/languages/top/akoows/focuser?color=56BEB8">
+  <img alt="Repository size" src="https://img.shields.io/github/repo-size/akoows/focuser?color=FFFFFF">
 
-  <img alt="Github language count" src="https://img.shields.io/github/languages/count/akoows/focuser?color=56BEB8">
+  <img alt="License" src="https://img.shields.io/github/license/akoows/focuser?color=FFFFFF">
 
-  <img alt="Repository size" src="https://img.shields.io/github/repo-size/akoows/focuser?color=56BEB8">
-
-  <img alt="License" src="https://img.shields.io/github/license/akoows/focuser?color=56BEB8">
-
-  <!-- <img alt="Github issues" src="https://img.shields.io/github/issues/{{YOUR_GITHUB_USERNAME}}/focuser?color=56BEB8" /> -->
-
-  <!-- <img alt="Github forks" src="https://img.shields.io/github/forks/{{YOUR_GITHUB_USERNAME}}/focuser?color=56BEB8" /> -->
-
-  <!-- <img alt="Github stars" src="https://img.shields.io/github/stars/{{YOUR_GITHUB_USERNAME}}/focuser?color=56BEB8" /> -->
+  <img alt="Github stars" src="https://img.shields.io/github/stars/akoows/focuser?color=FFFFFF" />
 </p>
 
 <!-- Status -->
 
-<!-- <h4 align="center"> 
-	🚧  Focuser 🚀 Under construction...  🚧
+<h4 align="center"> 
+	🚧  Focuser em construção...  🚧
 </h4> 
 
-<hr> -->
+<hr>
 
-<p align="center">
+<!-- <p align="center">
   <a href="#dart-about">About</a> &#xa0; | &#xa0; 
   <a href="#sparkles-features">Features</a> &#xa0; | &#xa0;
   <a href="#rocket-technologies">Technologies</a> &#xa0; | &#xa0;
@@ -59,12 +49,11 @@ Describe your project
 The following tools were used in this project:
 
 - [Node.js](https://nodejs.org/en/)
-
+-->
 ## :memo: License ##
 
-This project is under license from MIT. For more details, see the [LICENSE](LICENSE.md) file.
+Este projeto está sob a licença do MIT, para mais detalhes veja o [LICENSE](LICENSE.md).
 
-
-Made with :heart: by <a href="https://github.com/akoows" target="_blank">akoows</a>
+Feito pela equipe com :heart: para o Trabalho de Conclusão de Curso.
 
 &#xa0;
