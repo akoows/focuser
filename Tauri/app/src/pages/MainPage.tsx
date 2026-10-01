@@ -1,6 +1,27 @@
 import "./MainPage.css";
+import { useState } from "react";
+
+const tabs = [
+  { id: "today", label: "Hoje", icon: "⌂" },
+  { id: "tasks", label: "Tarefas", icon: "◫" },
+  { id: "habits", label: "Hábitos", icon: "◌" },
+  { id: "goals", label: "Metas", icon: "◈" },
+  { id: "analytics", label: "Análises", icon: "⌁" },
+  { id: "settings", label: "Configurações", icon: "⚙" },
+];
+
+const tabDescriptions: Record<string, string> = {
+  tasks: "Organize e acompanhe suas tarefas.",
+  habits: "Acompanhe os hábitos que você quer construir.",
+  goals: "Defina objetivos e acompanhe seu progresso.",
+  analytics: "Veja como você está usando seu tempo de foco.",
+  settings: "Personalize sua experiência no Focuser.",
+};
 
 function MainPage() {
+  const [activeTab, setActiveTab] = useState("today");
+  const activeTabInfo = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
+
   return (
     <div className="main-page">
 
@@ -12,35 +33,17 @@ function MainPage() {
 
         <nav className="navigation">
 
-          <a className="nav-item active">
-            <span>⌂</span>
-            Hoje
-          </a>
-
-          <a className="nav-item">
-            <span>◫</span>
-            Tarefas
-          </a>
-
-          <a className="nav-item">
-            <span>◌</span>
-            Hábitos
-          </a>
-
-          <a className="nav-item">
-            <span>◈</span>
-            Metas
-          </a>
-
-          <a className="nav-item">
-            <span>⌁</span>
-            Análises
-          </a>
-
-          <a className="nav-item">
-            <span>⚙</span>
-            Configurações
-          </a>
+          {tabs.map((tab) => (
+            <button
+              className={`nav-item ${activeTab === tab.id ? "active" : ""}`}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              type="button"
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
 
         </nav>
 
@@ -62,17 +65,19 @@ function MainPage() {
 
         <header className="page-header">
           <div>
-            <h1>Hoje</h1>
-            <p>Seu foco de hoje.</p>
+            <h1>{activeTabInfo.label}</h1>
+            <p>{activeTab === "today" ? "Seu foco de hoje." : tabDescriptions[activeTab]}</p>
           </div>
 
-          <button className="focus-button">
-            + Iniciar foco
-          </button>
+          {activeTab === "today" && (
+            <button className="focus-button" type="button">
+              + Iniciar foco
+            </button>
+          )}
         </header>
 
-
-        <section className="stats">
+        {activeTab === "today" ? <>
+          <section className="stats">
 
           <div className="stat-card">
             <span className="stat-title">
@@ -110,10 +115,10 @@ function MainPage() {
             <small>+12% esta semana</small>
           </div>
 
-        </section>
+          </section>
 
 
-        <section className="focus-section">
+          <section className="focus-section">
 
           <div className="section-header">
             <div>
@@ -130,10 +135,10 @@ function MainPage() {
             <div className="chart-line" />
           </div>
 
-        </section>
+          </section>
 
 
-        <section className="tasks-section">
+          <section className="tasks-section">
 
           <div className="section-header">
             <div>
@@ -177,7 +182,13 @@ function MainPage() {
 
           </div>
 
-        </section>
+          </section>
+        </> : (
+          <section className="tab-placeholder">
+            <h2>{activeTabInfo.label}</h2>
+            <p>{tabDescriptions[activeTab]}</p>
+          </section>
+        )}
 
       </main>
 

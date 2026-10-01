@@ -61,6 +61,18 @@
 
   font-size: 13px;
 
+  font-family: inherit;
+
+  border: none;
+
+  background: transparent;
+
+  width: 100%;
+
+  text-align: left;
+
+  cursor: pointer;
+
   text-decoration: none;
 
   transition: 0.2s;
@@ -420,4 +432,34 @@
   color: #555555;
 
   text-decoration: line-through;
+}
+
+.tab-placeholder {
+  min-height: 260px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  padding: 24px;
+
+  border: 1px solid #222222;
+  border-radius: 7px;
+
+  background: #101010;
+}
+
+.tab-placeholder h2 {
+  margin: 0 0 8px;
+
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.tab-placeholder p {
+  margin: 0;
+
+  color: #666666;
+
+  font-size: 13px;
 }
