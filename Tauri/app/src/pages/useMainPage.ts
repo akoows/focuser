@@ -27,6 +27,8 @@ type MonthCell = {
 
 const HABITS_STORAGE_KEY = "focuser.habits";
 const THEME_STORAGE_KEY = "focuser.theme";
+const ACCENT_COLOR_STORAGE_KEY = "focuser.accent-color";
+const DEFAULT_ACCENT_COLOR = "#ffffff";
 
 const initialHabits: Habit[] = [
   {
@@ -89,6 +91,27 @@ function loadLightMode() {
   } catch {
     return false;
   }
+}
+
+function loadAccentColor() {
+  try {
+    const savedColor = window.localStorage.getItem(ACCENT_COLOR_STORAGE_KEY);
+    return savedColor && /^#[0-9a-fA-F]{6}$/.test(savedColor)
+      ? savedColor
+      : DEFAULT_ACCENT_COLOR;
+  } catch {
+    return DEFAULT_ACCENT_COLOR;
+  }
+}
+
+function getAccentForeground(color: string) {
+  const channels = [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16) / 255);
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  );
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+
+  return luminance > 0.179 ? "#090909" : "#ffffff";
 }
 
 function getWeekDateKeys(date: Date) {
@@ -172,6 +195,7 @@ export function formatFocusTotal(seconds: number) {
 export function useMainPage() {
   const [activeTab, setActiveTab] = useState("today");
   const [isLightMode, setIsLightMode] = useState(loadLightMode);
+  const [accentColor, setAccentColor] = useState(loadAccentColor);
   const [tasks, setTasks] = useState<Habit[]>(loadHabits);
   const [selectedGoalHabitId, setSelectedGoalHabitId] = useState<string | null>(null);
   const [selectedMonthDate, setSelectedMonthDate] = useState(() => {
@@ -193,6 +217,7 @@ export function useMainPage() {
   const [totalFocusSeconds, setTotalFocusSeconds] = useState(0);
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
   const [hoveredFocusDay, setHoveredFocusDay] = useState<string | null>(null);
+  const accentForeground = getAccentForeground(accentColor);
   const todayDate = new Date();
   const todayKey = getLocalDateKey(todayDate);
   const weekDateKeys = getWeekDateKeys(todayDate);
@@ -238,6 +263,14 @@ export function useMainPage() {
       return;
     }
   }, [isLightMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACCENT_COLOR_STORAGE_KEY, accentColor);
+    } catch {
+      return;
+    }
+  }, [accentColor]);
 
   useEffect(() => {
     if (!isFocusActive || focusStartedAt === null) return;
@@ -388,6 +421,9 @@ export function useMainPage() {
     setActiveTab,
     isLightMode,
     setIsLightMode,
+    accentColor,
+    setAccentColor,
+    accentForeground,
     tasks,
     selectedGoalHabitId: selectedGoalHabit?.id ?? null,
     setSelectedGoalHabitId,

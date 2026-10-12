@@ -1,4 +1,7 @@
 .main-page {
+  --accent-color: #ffffff;
+  --accent-foreground: #090909;
+
   width: 100%;
   min-height: 100vh;
 
@@ -34,6 +37,7 @@
 .brand span {
   font-size: 16px;
   margin: 0 2px;
+  color: var(--accent-color);
 }
 
 .navigation {
@@ -91,7 +95,7 @@
 
 .nav-item.active {
   background: #151515;
-  color: #ffffff;
+  color: var(--accent-color);
 }
 
 .sidebar-bottom {
@@ -117,8 +121,8 @@
 
   border-radius: 50%;
 
-  background: #ffffff;
-  color: #000000;
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 
   font-size: 12px;
 }
@@ -182,11 +186,11 @@
 
   padding: 0 18px;
 
-  border: 1px solid #ffffff;
+  border: 1px solid var(--accent-color);
   border-radius: 6px;
 
-  background: #ffffff;
-  color: #000000;
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 
   font-size: 12px;
 
@@ -196,10 +200,13 @@
 }
 
 .focus-button:hover {
-  background: #dddddd;
+  background: color-mix(in srgb, var(--accent-color) 85%, #000000);
 }
 
 .focus-mode {
+  --accent-color: #ffffff;
+  --accent-foreground: #090909;
+
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -226,7 +233,7 @@
 
 .focus-mode-brand span {
   margin: 0 2px;
-  color: #ffffff;
+  color: var(--accent-color);
 }
 
 .focus-mode-content {
@@ -254,10 +261,10 @@
   min-width: 150px;
   min-height: 44px;
   padding: 0 20px;
-  border: 1px solid #ffffff;
+  border: 1px solid var(--accent-color);
   border-radius: 5px;
-  background: #ffffff;
-  color: #090909;
+  background: var(--accent-color);
+  color: var(--accent-foreground);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -266,7 +273,7 @@
 
 .focus-stop-button:hover {
   background: transparent;
-  color: #ffffff;
+  color: var(--accent-color);
 }
 
 .focus-mode-hint {
@@ -371,7 +378,7 @@
 .progress-value {
   height: 100%;
 
-  background: #ffffff;
+  background: var(--accent-color);
 }
 
 
@@ -442,7 +449,7 @@
 
 .focus-chart-line {
   fill: none;
-  stroke: #858585;
+  stroke: var(--accent-color);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
@@ -451,7 +458,7 @@
 
 .focus-chart-point {
   fill: #101010;
-  stroke: #ffffff;
+  stroke: var(--accent-color);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
   cursor: crosshair;
@@ -466,7 +473,7 @@
 
 .focus-chart-point.hovered {
   r: 6px;
-  fill: #ffffff;
+  fill: var(--accent-color);
 }
 
 .focus-chart-tooltip {
@@ -525,7 +532,7 @@
 }
 
 .add-button:hover {
-  color: #ffffff;
+  color: var(--accent-color);
 }
 
 .task-dialog-backdrop {
@@ -655,9 +662,9 @@
 }
 
 .task-submit-button {
-  border-color: #eeeeee;
-  background: #eeeeee;
-  color: #111111;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 @keyframes task-dialog-in {
@@ -727,7 +734,7 @@
 }
 
 .task-check:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--accent-color);
   outline-offset: 3px;
 }
 
@@ -736,10 +743,10 @@
   align-items: center;
   justify-content: center;
 
-  border-color: #ffffff;
+  border-color: var(--accent-color);
 
-  background: #ffffff;
-  color: #000000;
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 
   font-size: 10px;
 }
@@ -979,6 +986,143 @@
   border-bottom: 1px solid #222222;
 }
 
+.accent-palette-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 420px;
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid #262626;
+  border-radius: 7px;
+  background: #101010;
+}
+
+.accent-palette-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.accent-palette-heading strong,
+.accent-palette-heading small {
+  display: block;
+}
+
+.accent-palette-heading strong {
+  color: #eeeeee;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.accent-palette-heading small {
+  margin-top: 5px;
+  color: #777777;
+  font-size: 10px;
+}
+
+.accent-current-color {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 1px solid #2d2d2d;
+  border-radius: 5px;
+  background: #151515;
+}
+
+.accent-current-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+}
+
+.accent-current-color code {
+  color: #c9c9c9;
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.accent-palette-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.accent-color-options {
+  display: grid;
+  grid-template-columns: repeat(4, 30px);
+  gap: 10px;
+}
+
+.accent-color-option {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: var(--swatch-color);
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.accent-color-option:hover {
+  transform: scale(1.08);
+}
+
+.accent-color-option[aria-pressed="true"] {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px #101010, 0 0 0 4px var(--swatch-color);
+}
+
+.accent-color-option:focus-visible,
+.accent-hex-input input:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 3px;
+}
+
+.accent-hex-input {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #777777;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.accent-hex-input > span {
+  width: 100%;
+  color: #a0a0a0;
+  font-weight: 600;
+}
+
+.accent-hex-input input {
+  width: 108px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid #383838;
+  border-radius: 4px;
+  background: #111111;
+  color: #eeeeee;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.accent-hex-input > small {
+  color: #666666;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
 .appearance-setting strong,
 .appearance-setting small {
   display: block;
@@ -1028,17 +1172,17 @@
 }
 
 .appearance-switch input:checked {
-  border-color: #8baa94;
-  background: #b9d8c2;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
 }
 
 .appearance-switch input:checked::after {
-  background: #263b2c;
+  background: var(--accent-foreground);
   transform: translateX(18px);
 }
 
 .appearance-switch input:focus-visible {
-  outline: 2px solid #b9d8c2;
+  outline: 2px solid var(--accent-color);
   outline-offset: 3px;
 }
 
@@ -1205,7 +1349,7 @@
 
 .goal-progress-value {
   height: 100%;
-  background: #b9d8c2;
+  background: var(--accent-color);
   transition: width 200ms ease;
 }
 
@@ -1259,17 +1403,35 @@
 }
 
 .habit-calendar-day.completed {
-  border-color: #b9d8c2;
-  background: #b9d8c2;
-  color: #101510;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .habit-calendar-day.today {
-  outline: 1px solid #ffffff;
+  outline: 1px solid var(--accent-color);
   outline-offset: 1px;
 }
 
 @media (max-width: 640px) {
+  .accent-palette-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accent-color-options {
+    grid-template-columns: repeat(4, 30px);
+  }
+
+  .accent-color-option {
+    width: 28px;
+    height: 28px;
+  }
+
+  .accent-palette-heading {
+    align-items: flex-start;
+  }
+
   .all-task-row {
     gap: 10px;
     padding: 16px 0;
@@ -1381,6 +1543,10 @@
   color: #202820;
 }
 
+.main-page.light-theme .brand span {
+  color: var(--accent-color);
+}
+
 .main-page.light-theme .nav-item {
   color: #667168;
 }
@@ -1395,7 +1561,7 @@
 .main-page.light-theme .goal-habit-option.selected {
   border-color: #d5ded6;
   background: #e9efea;
-  color: #202820;
+  color: var(--accent-color);
 }
 
 .main-page.light-theme .sidebar-bottom,
@@ -1409,8 +1575,8 @@
 }
 
 .main-page.light-theme .user-avatar {
-  background: #26382c;
-  color: #ffffff;
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .main-page.light-theme .page-header p,
@@ -1432,13 +1598,13 @@
 }
 
 .main-page.light-theme .focus-button {
-  border-color: #26382c;
-  background: #26382c;
-  color: #ffffff;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .main-page.light-theme .focus-button:hover {
-  background: #3a5040;
+  background: color-mix(in srgb, var(--accent-color) 85%, #000000);
 }
 
 .main-page.light-theme .stat-card,
@@ -1448,6 +1614,43 @@
 .main-page.light-theme .appearance-setting {
   border-color: #dfe4df;
   background: #ffffff;
+}
+
+.main-page.light-theme .accent-palette-setting {
+  border-color: #dfe4df;
+  background: #ffffff;
+}
+
+.main-page.light-theme .accent-palette-heading strong {
+  color: #26332a;
+}
+
+.main-page.light-theme .accent-palette-heading small {
+  color: #69736b;
+}
+
+.main-page.light-theme .accent-current-color {
+  border-color: #dfe4df;
+  background: #f7f9f7;
+}
+
+.main-page.light-theme .accent-current-color code {
+  color: #354137;
+}
+
+.main-page.light-theme .accent-color-option[aria-pressed="true"] {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--swatch-color);
+}
+
+.main-page.light-theme .accent-hex-input {
+  color: #69736b;
+}
+
+.main-page.light-theme .accent-hex-input input {
+  border-color: #d7ded7;
+  background: #f7f9f7;
+  color: #26332a;
 }
 
 .main-page.light-theme .stat-card strong,
@@ -1460,7 +1663,7 @@
 }
 
 .main-page.light-theme .progress-value {
-  background: #78947e;
+  background: var(--accent-color);
 }
 
 .main-page.light-theme .task,
@@ -1473,13 +1676,13 @@
 }
 
 .main-page.light-theme .task-check:focus-visible {
-  outline-color: #46634e;
+  outline-color: var(--accent-color);
 }
 
 .main-page.light-theme .task-check.checked {
-  border-color: #45634d;
-  background: #45634d;
-  color: #ffffff;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .main-page.light-theme .task.completed strong,
@@ -1548,14 +1751,14 @@
 .main-page.light-theme .task-form textarea:focus,
 .main-page.light-theme .task-form select:focus,
 .main-page.light-theme .month-picker select:focus-visible {
-  border-color: #78947e;
-  outline-color: rgba(70, 99, 78, 0.18);
+  border-color: var(--accent-color);
+  outline-color: color-mix(in srgb, var(--accent-color) 18%, transparent);
 }
 
 .main-page.light-theme .task-submit-button {
-  border-color: #26382c;
-  background: #26382c;
-  color: #ffffff;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .main-page.light-theme .month-picker,
@@ -1576,7 +1779,7 @@
 }
 
 .main-page.light-theme .goal-progress-value {
-  background: #78947e;
+  background: var(--accent-color);
 }
 
 .main-page.light-theme .habit-calendar-weekday {
@@ -1589,13 +1792,13 @@
 }
 
 .main-page.light-theme .habit-calendar-day.completed {
-  border-color: #78947e;
-  background: #78947e;
-  color: #ffffff;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .main-page.light-theme .habit-calendar-day.today {
-  outline-color: #26382c;
+  outline-color: var(--accent-color);
 }
 
 .main-page.light-theme .focus-chart-grid line {
@@ -1608,16 +1811,16 @@
 }
 
 .main-page.light-theme .focus-chart-line {
-  stroke: #839187;
+  stroke: var(--accent-color);
 }
 
 .main-page.light-theme .focus-chart-point {
   fill: #ffffff;
-  stroke: #526b58;
+  stroke: var(--accent-color);
 }
 
 .main-page.light-theme .focus-chart-point.hovered {
-  fill: #526b58;
+  fill: var(--accent-color);
 }
 
 .main-page.light-theme .focus-chart-tooltip rect {
@@ -1649,18 +1852,18 @@
 }
 
 .focus-mode.light-theme .focus-mode-brand span {
-  color: #526b58;
+  color: var(--accent-color);
 }
 
 .focus-mode.light-theme .focus-stop-button {
-  border-color: #26382c;
-  background: #26382c;
-  color: #ffffff;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
 }
 
 .focus-mode.light-theme .focus-stop-button:hover {
   background: transparent;
-  color: #26382c;
+  color: var(--accent-color);
 }
 
 .main-page,

@@ -1,5 +1,17 @@
 import "./MainPage.css";
+import { useEffect, useState, type CSSProperties } from "react";
 import { formatFocusTotal, formatTimer, useMainPage } from "./useMainPage";
+
+const accentColorOptions = [
+  { value: "#ffffff", label: "Branco" },
+  { value: "#b9d8c2", label: "Verde menta" },
+  { value: "#61d6d0", label: "Turquesa" },
+  { value: "#79aaff", label: "Azul" },
+  { value: "#b89aff", label: "Violeta" },
+  { value: "#ff8fb3", label: "Rosa" },
+  { value: "#ffb86b", label: "Laranja" },
+  { value: "#d2e56c", label: "Lima" },
+];
 
 const tabs = [
   { id: "today", label: "Hoje", icon: "⌂" },
@@ -27,6 +39,9 @@ function MainPage() {
     setActiveTab,
     isLightMode,
     setIsLightMode,
+    accentColor,
+    setAccentColor,
+    accentForeground,
     tasks,
     selectedGoalHabitId,
     setSelectedGoalHabitId,
@@ -78,6 +93,27 @@ function MainPage() {
     startFocus,
     stopFocus,
   } = useMainPage();
+  const [accentColorDraft, setAccentColorDraft] = useState(accentColor);
+  useEffect(() => setAccentColorDraft(accentColor), [accentColor]);
+
+  function handleAccentColorDraftChange(value: string) {
+    setAccentColorDraft(value);
+    if (/^#[0-9a-fA-F]{6}$/.test(value)) setAccentColor(value);
+  }
+
+  function handleAccentColorDraftBlur() {
+    if (!/^#[0-9a-fA-F]{6}$/.test(accentColorDraft)) {
+      setAccentColorDraft(accentColor);
+    }
+  }
+
+  const accentStyle: CSSProperties & {
+    "--accent-color": string;
+    "--accent-foreground": string;
+  } = {
+    "--accent-color": accentColor,
+    "--accent-foreground": accentForeground,
+  };
   const activeTabInfo = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
   const selectedWeeklyCompletions = selectedGoalHabit
     ? selectedGoalHabit.completionDates.filter((date) => weekDateKeys.includes(date)).length
@@ -100,7 +136,7 @@ function MainPage() {
 
   if (isFocusActive) {
     return (
-      <main aria-label="Sessão de foco" className={`focus-mode ${isLightMode ? "light-theme" : ""}`}>
+      <main aria-label="Sessão de foco" className={`focus-mode ${isLightMode ? "light-theme" : ""}`} style={accentStyle}>
         <div className="focus-mode-brand">f<span>✦</span>cuser</div>
         <div className="focus-mode-content">
           <span className="focus-mode-label">SESSÃO DE FOCO</span>
@@ -117,7 +153,7 @@ function MainPage() {
   }
 
   return (
-    <div className={`main-page ${isLightMode ? "light-theme" : ""}`}>
+    <div className={`main-page ${isLightMode ? "light-theme" : ""}`} style={accentStyle}>
 
       <aside className="sidebar">
 
@@ -546,6 +582,56 @@ function MainPage() {
                 />
                 <span aria-hidden="true" />
               </label>
+            </div>
+
+            <div className="accent-palette-setting">
+              <div className="accent-palette-heading">
+                <div>
+                  <strong>Cor de destaque</strong>
+                  <small>Personalize os detalhes da interface.</small>
+                </div>
+                <div className="accent-current-color">
+                  <span
+                    aria-hidden="true"
+                    className="accent-current-swatch"
+                    style={{ background: accentColor }}
+                  />
+                  <code>{accentColor.toUpperCase()}</code>
+                </div>
+              </div>
+              <div className="accent-palette-controls">
+                <div
+                  aria-label="Cores de destaque predefinidas"
+                  className="accent-color-options"
+                  role="group"
+                >
+                  {accentColorOptions.map((option) => (
+                    <button
+                      aria-label={option.label}
+                      aria-pressed={accentColor.toLowerCase() === option.value}
+                      className="accent-color-option"
+                      key={option.value}
+                      onClick={() => setAccentColor(option.value)}
+                      style={{ "--swatch-color": option.value } as CSSProperties}
+                      title={option.label}
+                      type="button"
+                    />
+                  ))}
+                </div>
+                <label className="accent-hex-input">
+                  <span>HEX</span>
+                  <input
+                    aria-label="Código HEX da cor de destaque"
+                    maxLength={7}
+                    onBlur={handleAccentColorDraftBlur}
+                    onChange={(event) => handleAccentColorDraftChange(event.target.value)}
+                    spellCheck={false}
+                    type="text"
+                    value={accentColorDraft}
+                  />
+                  <small>Ex.: #7AA2FF</small>
+                </label>
+              </div>
             </div>
           </section>
         ) : (

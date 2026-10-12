@@ -1,0 +1,50 @@
+{
+  "name": "focuser",
+  "version": "0.0.1",
+  "description": "Focuser API created with NodeJS + Express",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "db:generate": "prisma generate"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akoows/focuser.git"
+  },
+  "keywords": [
+    "express",
+    "nodejs",
+    "prisma",
+    "api"
+  ],
+  "author": "akoows",
+  "contributors": [
+    {
+      "name": "Davi-ux-max",
+      "url": "https://github.com/Davi-ux-max"
+    },
+    {
+      "name": "andresouzasilva8311-spec",
+      "url": "https://github.com/andresouzasilva8311-spec"
+    },
+    {
+      "name": "voante10",
+      "url": "https://github.com/voante10"
+    }
+  ],
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/akoows/focuser/issues"
+  },
+  "homepage": "https://github.com/akoows/focuser#readme",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  }
+}

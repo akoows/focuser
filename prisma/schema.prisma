@@ -1,0 +1,20 @@
+
+  generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+    output = "../app/generated/prisma"
+  }
+
+  datasource db {
+    provider = "mongodb"
+    url = env("DATABASE_URL")
+  }
+
+  model User {
+    id             String        @id @default(auto()) @map("_id") @db.ObjectId
+    name           String
+    email          String        @unique
+    pass           String
+    avatarUrl      String?        @default("https://res.cloudinary.com/dylkeqcms/image/upload/v1762125098/default_uqhrk3.jpg")
+    createdAt      DateTime      @default(now())
+  }
