@@ -18,7 +18,10 @@
     pass         String?
     avatarUrl    String?  @default("https://res.cloudinary.com/dylkeqcms/image/upload/v1762125098/default_uqhrk3.jpg")
     timezone     String   @default("America/Sao_Paulo")
+    accentColor  String   @default("#ffffff")
     tokenVersion Int      @default(0)
+    emailVerifiedAt DateTime?
+    activeFocusSessionId String? @db.ObjectId
     createdAt    DateTime @default(now())
     updatedAt    DateTime @updatedAt
   }
@@ -53,4 +56,102 @@
 
     @@unique([habitId, dateKey])
     @@index([userId, dateKey])
+  }
+
+  enum GoalPeriod {
+    DAILY
+    WEEKLY
+    MONTHLY
+    CUSTOM
+  }
+
+  model Goal {
+    id           String     @id @default(auto()) @map("_id") @db.ObjectId
+    userId       String     @db.ObjectId
+    name         String
+    description  String?
+    category     String?
+    targetValue  Float
+    currentValue Float      @default(0)
+    unit         String
+    period       GoalPeriod @default(MONTHLY)
+    isActive     Boolean    @default(true)
+    createdAt    DateTime   @default(now())
+    updatedAt    DateTime   @updatedAt
+
+    @@index([userId, isActive])
+  }
+
+  enum FocusSessionStatus {
+    RUNNING
+    PAUSED
+    COMPLETED
+    CANCELLED
+  }
+
+  model FocusSession {
+    id             String             @id @default(auto()) @map("_id") @db.ObjectId
+    userId         String             @db.ObjectId
+    goalId         String?            @db.ObjectId
+    title          String
+    plannedMinutes Int
+    elapsedSeconds Int                @default(0)
+    status         FocusSessionStatus @default(RUNNING)
+    resumedAt      DateTime?
+    completedAt    DateTime?
+    cancelledAt    DateTime?
+    createdAt      DateTime           @default(now())
+    updatedAt      DateTime           @updatedAt
+
+    @@index([userId, status, createdAt])
+    @@index([userId, goalId])
+  }
+
+  enum AuthChallengePurpose {
+    EMAIL_VERIFICATION
+    LOGIN
+  }
+
+  model AuthChallenge {
+    id           String               @id @default(auto()) @map("_id") @db.ObjectId
+    userId       String               @db.ObjectId
+    purpose      AuthChallengePurpose
+    codeHash     String
+    expiresAt    DateTime
+    consumedAt   DateTime?
+    attemptCount Int                  @default(0)
+    createdAt    DateTime             @default(now())
+
+    @@index([userId, purpose, createdAt])
+    @@index([expiresAt])
+  }
+
+  model ReadingBook {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    title       String
+    author      String?
+    isbn        String?
+    coverId     Int?
+    coverUrl    String?
+    totalPages  Int
+    currentPage Int      @default(0)
+    isActive    Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    @@index([userId, isActive, createdAt])
+  }
+
+  model ReadingLog {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    bookId      String   @db.ObjectId
+    pagesRead   Int
+    minutesRead Int
+    dateKey     String
+    createdAt   DateTime @default(now())
+
+    @@index([userId, dateKey])
+    @@index([userId, bookId, createdAt])
   }

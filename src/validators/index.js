@@ -37,7 +37,81 @@ export const loginSchema = z.object({
 export const updateUserSchema = z.object({
     name: z.string().trim().min(1).max(80).optional(),
     timezone: timezone.optional(),
+    accentColor: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida.").optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
+
+export const verificationSchema = z.object({
+    email,
+    code: z.string().regex(/^\d{6}$/, "O código deve conter 6 dígitos."),
+}).strict();
+export const emailSchema = z.object({ email }).strict();
+
+export const goalCreateSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.string().trim().max(60).nullable().optional(),
+    targetValue: z.number().finite().positive().max(1_000_000_000),
+    currentValue: z.number().finite().min(0).max(1_000_000_000).default(0),
+    unit: z.string().trim().min(1).max(30),
+    period: z.enum(["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]).default("MONTHLY"),
+}).strict();
+
+export const goalUpdateSchema = z.object({
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.string().trim().max(60).nullable().optional(),
+    targetValue: z.number().finite().positive().max(1_000_000_000).optional(),
+    currentValue: z.number().finite().min(0).max(1_000_000_000).optional(),
+    unit: z.string().trim().min(1).max(30).optional(),
+    period: z.enum(["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]).optional(),
+    isActive: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
+
+export const goalProgressSchema = z.object({
+    amount: z.number().finite().positive().max(1_000_000_000).default(1),
+}).strict();
+
+export const focusSessionCreateSchema = z.object({
+    title: z.string().trim().min(1).max(120).default("Sessão de foco"),
+    plannedMinutes: z.number().int().min(1).max(480).default(25),
+    goalId: objectId.optional(),
+}).strict();
+
+export const readingBookCreateSchema = z.object({
+    title: z.string().trim().min(1).max(160),
+    author: z.string().trim().max(120).nullable().optional(),
+    isbn: z.string().trim().max(20).nullable().optional(),
+    coverId: z.number().int().positive().nullable().optional(),
+    coverUrl: z.string().url().max(2048).refine((value) => value.startsWith("https://"),
+        "A capa deve usar HTTPS.").nullable().optional(),
+    totalPages: z.number().int().min(1).max(100_000),
+    currentPage: z.number().int().min(0).max(100_000).default(0),
+}).strict().refine((value) => value.currentPage <= value.totalPages, {
+    path: ["currentPage"],
+    message: "A página atual não pode exceder o total.",
+});
+
+export const readingBookUpdateSchema = z.object({
+    title: z.string().trim().min(1).max(160).optional(),
+    author: z.string().trim().max(120).nullable().optional(),
+    isbn: z.string().trim().max(20).nullable().optional(),
+    coverId: z.number().int().positive().nullable().optional(),
+    coverUrl: z.string().url().max(2048).refine((value) => value.startsWith("https://"),
+        "A capa deve usar HTTPS.").nullable().optional(),
+    totalPages: z.number().int().min(1).max(100_000).optional(),
+    currentPage: z.number().int().min(0).max(100_000).optional(),
+    isActive: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
+
+export const readingLogCreateSchema = z.object({
+    pagesRead: z.number().int().min(1).max(10_000),
+    minutesRead: z.number().int().min(1).max(1_440),
+}).strict();
+
+export const isbnLookupSchema = z.object({
+    title: z.string().trim().min(1).max(160),
+    author: z.string().trim().max(120).optional(),
+}).strict();
 
 export const habitCreateSchema = z.object({
     name: z.string().trim().min(1).max(100),
