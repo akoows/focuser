@@ -82,16 +82,12 @@ function AuthProvider({ children }) {
   };
 
   const login = async (credentials) => {
-    const result = credentials.code
-      ? await focuserApi.verifyLogin(credentials)
-      : await focuserApi.login(credentials);
-    if (result.user) {
-      setUser(result.user);
-      setAccentColor(/^#[\da-f]{6}$/i.test(result.user.accentColor || '') ? result.user.accentColor : '#ffffff');
-      setHasCheckedSession(true);
-      setSessionError('');
-    }
-    return result;
+    const { user: authenticatedUser } = await focuserApi.login(credentials);
+    setUser(authenticatedUser);
+    setAccentColor(/^#[\da-f]{6}$/i.test(authenticatedUser.accentColor || '') ? authenticatedUser.accentColor : '#ffffff');
+    setHasCheckedSession(true);
+    setSessionError('');
+    return authenticatedUser;
   };
 
   const logout = async () => {
@@ -565,8 +561,6 @@ function ResourcesPage() {
 function LoginPage() {
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
-  const [code, setCode] = useState('');
-  const [step, setStep] = useState('credentials');
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -584,36 +578,15 @@ function LoginPage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
-    if (step === 'credentials') {
-      const nextErrors = validate();
-      setErrors(nextErrors);
-      if (Object.keys(nextErrors).length > 0) return;
-    } else if (!/^\d{6}$/.test(code)) {
-      setErrors({ code: 'Informe o código de 6 dígitos enviado por e-mail.' });
-      return;
-    } else {
-      setErrors({});
-    }
+    const nextErrors = validate();
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
     setSubmitError('');
     setStatusMessage('');
     setIsSubmitting(true);
     try {
-      if (step === 'email-verification') {
-        await focuserApi.verifyEmail({ email: form.email, code });
-        setStep('credentials');
-        setCode('');
-        setStatusMessage('E-mail verificado. Entre novamente para receber seu código de acesso.');
-      } else {
-        const result = await login(step === 'two-factor' ? { email: form.email, code } : { email: form.email, password: form.password });
-        if (result.user) navigate('/app');
-        else {
-          setStep(result.emailVerificationRequired ? 'email-verification' : 'two-factor');
-          setCode('');
-          setStatusMessage(result.emailVerificationRequired
-            ? 'Enviamos um código para verificar seu e-mail.'
-            : 'Enviamos um código de acesso para seu e-mail.');
-        }
-      }
+      await login({ email: form.email, password: form.password });
+      navigate('/app');
     } catch (error) {
       setSubmitError(error.message);
     } finally {
@@ -626,39 +599,25 @@ function LoginPage() {
       <div className="auth-card card">
         <Logo />
         <div className="auth-header">
-          <h1>{step === 'credentials' ? 'bem-vindo de volta' : step === 'two-factor' ? 'confirme seu acesso' : 'verifique seu e-mail'}</h1>
-          <p>{step === 'credentials' ? 'faça login para continuar' : `informe o código enviado para ${form.email}`}</p>
+          <h1>bem-vindo de volta</h1>
+          <p>faça login para continuar</p>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
-          {step === 'credentials' ? <>
-            <label>
-              <span>E-mail</span>
-              <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
-              {errors.email ? <small className="error-text">{errors.email}</small> : null}
-            </label>
-            <label>
-              <span>Senha</span>
-              <input type="password" autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
-              {errors.password ? <small className="error-text">{errors.password}</small> : null}
-            </label>
-          </> : <label>
-            <span>Código de 6 dígitos</span>
-            <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" aria-invalid={Boolean(errors.code)} />
-            {errors.code ? <small className="error-text">{errors.code}</small> : null}
-          </label>}
+          <label>
+            <span>E-mail</span>
+            <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
+            {errors.email ? <small className="error-text">{errors.email}</small> : null}
+          </label>
+          <label>
+            <span>Senha</span>
+            <input type="password" autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
+            {errors.password ? <small className="error-text">{errors.password}</small> : null}
+          </label>
           {statusMessage ? <p role="status">{statusMessage}</p> : null}
           {submitError ? <p className="error-text" role="alert">{submitError}</p> : null}
           <button type="submit" className="button button-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Aguarde...' : step === 'credentials' ? 'Entrar' : step === 'two-factor' ? 'Confirmar acesso' : 'Verificar e-mail'}
+            {isSubmitting ? 'Aguarde...' : 'Entrar'}
           </button>
-          {step === 'email-verification' ? <button type="button" className="button button-secondary" disabled={isSubmitting} onClick={async () => {
-            setSubmitError('');
-            setIsSubmitting(true);
-            try { await focuserApi.resendEmailVerification({ email: form.email }); setStatusMessage('Se a conta precisar de verificação, um novo código foi enviado.'); }
-            catch (error) { setSubmitError(error.message); }
-            finally { setIsSubmitting(false); }
-          }}>Reenviar código</button> : null}
-          {step !== 'credentials' ? <button type="button" className="button button-secondary" disabled={isSubmitting} onClick={() => { setStep('credentials'); setCode(''); setSubmitError(''); setStatusMessage(''); }}>Voltar</button> : null}
         </form>
         <p className="switch-link">Ainda não tem conta? <Link to="/cadastro">crie agora</Link></p>
       </div>
@@ -668,11 +627,8 @@ function LoginPage() {
 
 function SignupPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
-  const [code, setCode] = useState('');
-  const [verificationPending, setVerificationPending] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
-  const [statusMessage, setStatusMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
@@ -688,35 +644,20 @@ function SignupPage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
-    if (!verificationPending) {
-      const nextErrors = validate();
-      setErrors(nextErrors);
-      if (Object.keys(nextErrors).length > 0) return;
-    } else if (!/^\d{6}$/.test(code)) {
-      setErrors({ code: 'Informe o código de 6 dígitos enviado por e-mail.' });
-      return;
-    } else {
-      setErrors({});
-    }
+    const nextErrors = validate();
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
     setSubmitError('');
-    setStatusMessage('');
     setIsSubmitting(true);
     try {
-      if (verificationPending) {
-        await focuserApi.verifyEmail({ email: form.email, code });
-        navigate('/login', { state: { message: 'E-mail verificado. Agora entre para concluir a autenticação em duas etapas.' } });
-      } else {
-        await focuserApi.register({
-          name: form.name.trim(),
-          email: form.email,
-          password: form.password,
-        });
-        setVerificationPending(true);
-        setStatusMessage('Enviamos um código para seu e-mail. O código expira em 10 minutos.');
-      }
+      await focuserApi.register({
+        name: form.name.trim(),
+        email: form.email,
+        password: form.password,
+      });
+      navigate('/login', { state: { message: 'Conta criada. Entre com seu e-mail e senha.' } });
     } catch (error) {
       setSubmitError(error.message);
-      if (error.code === 'EMAIL_DELIVERY_FAILED') setVerificationPending(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -727,48 +668,31 @@ function SignupPage() {
       <div className="auth-card card">
         <Logo />
         <div className="auth-header">
-          <h1>{verificationPending ? 'verifique seu e-mail' : 'crie sua conta'}</h1>
+          <h1>crie sua conta</h1>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
-          {verificationPending ? <>
-            <p>Enviamos um código de verificação para <strong>{form.email}</strong>.</p>
-            <label>
-              <span>Código de 6 dígitos</span>
-              <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" aria-invalid={Boolean(errors.code)} />
-              {errors.code ? <small className="error-text">{errors.code}</small> : null}
-            </label>
-          </> : <>
-            <label>
-              <span>Nome</span>
-              <input type="text" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Seu nome" aria-invalid={Boolean(errors.name)} />
-              {errors.name ? <small className="error-text">{errors.name}</small> : null}
-            </label>
-            <label>
-              <span>E-mail</span>
-              <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
-              {errors.email ? <small className="error-text">{errors.email}</small> : null}
-            </label>
-            <label>
-              <span>Senha</span>
-              <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
-              {errors.password ? <small className="error-text">{errors.password}</small> : <small>Mínimo de 8 caracteres; até 72 bytes.</small>}
-            </label>
-            <label>
-              <span>Confirmação de senha</span>
-              <input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder="Repita a senha" aria-invalid={Boolean(errors.confirmPassword)} />
-              {errors.confirmPassword ? <small className="error-text">{errors.confirmPassword}</small> : null}
-            </label>
-          </>}
-          {statusMessage ? <p role="status">{statusMessage}</p> : null}
+          <label>
+            <span>Nome</span>
+            <input type="text" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Seu nome" aria-invalid={Boolean(errors.name)} />
+            {errors.name ? <small className="error-text">{errors.name}</small> : null}
+          </label>
+          <label>
+            <span>E-mail</span>
+            <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
+            {errors.email ? <small className="error-text">{errors.email}</small> : null}
+          </label>
+          <label>
+            <span>Senha</span>
+            <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
+            {errors.password ? <small className="error-text">{errors.password}</small> : <small>Mínimo de 8 caracteres; até 72 bytes.</small>}
+          </label>
+          <label>
+            <span>Confirmação de senha</span>
+            <input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder="Repita a senha" aria-invalid={Boolean(errors.confirmPassword)} />
+            {errors.confirmPassword ? <small className="error-text">{errors.confirmPassword}</small> : null}
+          </label>
           {submitError ? <p className="error-text" role="alert">{submitError}</p> : null}
-          <button type="submit" className="button button-primary" disabled={isSubmitting}>{isSubmitting ? 'Aguarde…' : verificationPending ? 'Verificar e-mail' : 'Criar conta'}</button>
-          {verificationPending ? <button type="button" className="button button-secondary" disabled={isSubmitting} onClick={async () => {
-            setSubmitError('');
-            setIsSubmitting(true);
-            try { await focuserApi.resendEmailVerification({ email: form.email }); setStatusMessage('Se a conta precisar de verificação, um novo código foi enviado.'); }
-            catch (error) { setSubmitError(error.message); }
-            finally { setIsSubmitting(false); }
-          }}>Reenviar código</button> : null}
+          <button type="submit" className="button button-primary" disabled={isSubmitting}>{isSubmitting ? 'Aguarde…' : 'Criar conta'}</button>
         </form>
         <p className="switch-link">Já tem conta? <Link to="/login">faça login</Link></p>
       </div>
@@ -2098,7 +2022,7 @@ function App() {
     <HashRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/recursos" element={<ResourcesPage />} />
           <Route path="/precos" element={<Navigate to="/" replace />} />
           <Route path="/login" element={<LoginPage />} />

@@ -1,14 +1,14 @@
 # Focuser para desktop
 
-O aplicativo Tauri usa a interface React da branch `web`, incluindo as páginas
-públicas e as áreas autenticadas de hoje, hábitos, metas, leituras, análises e
-configurações. A navegação usa hash routes para funcionar no WebView desktop.
+O aplicativo Tauri usa a interface React da branch `web` para login/cadastro e
+as áreas autenticadas de hoje, hábitos, metas, leituras, análises e configurações.
+A página inicial pública do site não é exibida no desktop; o app abre no login.
+A navegação usa hash routes para funcionar no WebView desktop.
 
 ## Executar
 
-1. Inicie a API e o MongoDB na raiz do repositório. Cadastro e login exigem
-   `RESEND_API_KEY` e `EMAIL_FROM` no `.env` da raiz, pois usam verificação de
-   e-mail e código de acesso. Veja as [instruções da API](../../README.md).
+1. Inicie a API e o MongoDB na raiz do repositório. Cadastro e login não exigem
+   verificação por e-mail. Veja as [instruções da API](../../README.md).
 2. Instale as dependências do frontend:
 
    ```sh

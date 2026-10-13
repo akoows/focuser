@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    emailSchema,
     focusSessionCreateSchema,
     goalCreateSchema,
     goalProgressSchema,
@@ -11,15 +10,11 @@ import {
     readingBookUpdateSchema,
     readingLogCreateSchema,
     updateUserSchema,
-    verificationSchema,
 } from "./index.js";
 
-test("profile accent colors and verification codes are strictly validated", () => {
+test("profile accent colors are strictly validated", () => {
     assert.deepEqual(parse(updateUserSchema, { accentColor: "#93C5FD" }), { accentColor: "#93C5FD" });
     assert.throws(() => parse(updateUserSchema, { accentColor: "blue" }), { status: 400, code: "VALIDATION_ERROR" });
-    assert.equal(parse(emailSchema, { email: " Person@Example.com " }).email, "person@example.com");
-    assert.throws(() => parse(verificationSchema, { email: "a@example.com", code: "12345" }),
-        { status: 400, code: "VALIDATION_ERROR" });
 });
 
 test("goal validators enforce numeric bounds and only accept web fields", () => {

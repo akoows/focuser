@@ -3,8 +3,6 @@ import bcrypt from "bcrypt";
 import { prisma } from "../lib/prisma.js";
 import { AUTH_COOKIE, createAuthToken, optionalAuth, requireAuth } from "../middlewares/auth.js";
 import { asyncHandler, HttpError, sendSuccess } from "../utils/apiResponse.js";
-import { consumeAuthChallenge, issueAuthChallenge } from "../services/authChallenges.js";
-import { assertEmailConfigured } from "../services/email.js";
 import productivityRouter from "./productivityRoutes.js";
 import {
     addDateKeyDays,
@@ -18,7 +16,6 @@ import {
 import {
     archiveSchema,
     checkInCreateSchema,
-    emailSchema,
     habitCreateSchema,
     habitUpdateSchema,
     parse,
@@ -28,7 +25,6 @@ import {
     registerSchema,
     loginSchema,
     updateUserSchema,
-    verificationSchema,
 } from "../validators/index.js";
 
 const router = Router();
@@ -44,7 +40,6 @@ function publicUser(user) {
         email: user.email,
         timezone: user.timezone,
         accentColor: user.accentColor || "#ffffff",
-        emailVerified: Boolean(user.emailVerifiedAt),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
     };
@@ -188,7 +183,6 @@ router.get("/health", asyncHandler(async (_req, res) => {
 
 router.post("/auth/register", asyncHandler(async (req, res) => {
     const input = parse(registerSchema, req.body);
-    assertEmailConfigured();
     if (await prisma.user.findUnique({ where: { email: input.email } })) {
         throw new HttpError(409, "EMAIL_IN_USE", "Este e-mail já está cadastrado.");
     }
@@ -204,7 +198,6 @@ router.post("/auth/register", asyncHandler(async (req, res) => {
                 accentColor: "#ffffff",
             },
         });
-        await issueAuthChallenge(user, "EMAIL_VERIFICATION");
         return sendSuccess(res, { user: publicUser(user) }, 201);
     } catch (error) {
         if (error instanceof HttpError) throw error;
@@ -231,42 +224,7 @@ router.post("/auth/login", asyncHandler(async (req, res) => {
         user.passwordHash = user.pass;
         user.pass = null;
     }
-    if (!user.emailVerifiedAt) {
-        await issueAuthChallenge(user, "EMAIL_VERIFICATION");
-        return sendSuccess(res, { emailVerificationRequired: true });
-    }
-    await issueAuthChallenge(user, "LOGIN");
-    return sendSuccess(res, { twoFactorRequired: true });
-}));
-
-router.post("/auth/verify-email", asyncHandler(async (req, res) => {
-    const input = parse(verificationSchema, req.body);
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
-    if (!user) throw new HttpError(400, "INVALID_VERIFICATION_CODE", "Código inválido ou expirado.");
-    await consumeAuthChallenge(user.id, "EMAIL_VERIFICATION", input.code);
-    await prisma.user.update({
-        where: { id: user.id },
-        data: { emailVerifiedAt: new Date() },
-    });
-    return sendSuccess(res, { verified: true });
-}));
-
-router.post("/auth/resend-verification", asyncHandler(async (req, res) => {
-    const email = parse(emailSchema, req.body).email;
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (user && !user.emailVerifiedAt) await issueAuthChallenge(user, "EMAIL_VERIFICATION");
-    return sendSuccess(res, { message: "Se a conta precisar de verificação, um novo código foi enviado." });
-}));
-
-router.post("/auth/verify-login", asyncHandler(async (req, res) => {
-    const input = parse(verificationSchema, req.body);
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
-    if (!user || !user.emailVerifiedAt) {
-        throw new HttpError(400, "INVALID_VERIFICATION_CODE", "Código inválido ou expirado.");
-    }
-    const token = createAuthToken(user);
-    await consumeAuthChallenge(user.id, "LOGIN", input.code);
-    setAuthCookie(res, token);
+    setAuthCookie(res, createAuthToken(user));
     return sendSuccess(res, { user: publicUser(user) });
 }));
 

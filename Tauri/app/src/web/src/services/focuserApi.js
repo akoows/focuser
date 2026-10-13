@@ -36,9 +36,6 @@ async function request(endpoint, { method = 'GET', body, credentials = 'include'
 export const focuserApi = {
   register: (data) => request('/auth/register', { method: 'POST', body: data }),
   login: (data) => request('/auth/login', { method: 'POST', body: data }),
-  verifyEmail: (data) => request('/auth/verify-email', { method: 'POST', body: data }),
-  resendEmailVerification: (data) => request('/auth/resend-verification', { method: 'POST', body: data }),
-  verifyLogin: (data) => request('/auth/verify-login', { method: 'POST', body: data }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
   updateProfile: (data) => request('/users/me', { method: 'PATCH', body: data }),

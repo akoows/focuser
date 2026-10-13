@@ -40,12 +40,6 @@ export const updateUserSchema = z.object({
     accentColor: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida.").optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
 
-export const verificationSchema = z.object({
-    email,
-    code: z.string().regex(/^\d{6}$/, "O código deve conter 6 dígitos."),
-}).strict();
-export const emailSchema = z.object({ email }).strict();
-
 export const goalCreateSchema = z.object({
     name: z.string().trim().min(1).max(100),
     description: z.string().trim().max(500).nullable().optional(),
