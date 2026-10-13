@@ -11,10 +11,46 @@
   }
 
   model User {
-    id             String        @id @default(auto()) @map("_id") @db.ObjectId
-    name           String
-    email          String        @unique
-    pass           String
-    avatarUrl      String?        @default("https://res.cloudinary.com/dylkeqcms/image/upload/v1762125098/default_uqhrk3.jpg")
-    createdAt      DateTime      @default(now())
+    id           String   @id @default(auto()) @map("_id") @db.ObjectId
+    name         String
+    email        String   @unique
+    passwordHash String?
+    pass         String?
+    avatarUrl    String?  @default("https://res.cloudinary.com/dylkeqcms/image/upload/v1762125098/default_uqhrk3.jpg")
+    timezone     String   @default("America/Sao_Paulo")
+    tokenVersion Int      @default(0)
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+  }
+
+  enum Frequency {
+    DAILY
+    CUSTOM
+  }
+
+  model Habit {
+    id           String    @id @default(auto()) @map("_id") @db.ObjectId
+    userId       String    @db.ObjectId
+    name         String
+    description  String?
+    frequency    Frequency @default(DAILY)
+    daysOfWeek   Int[]
+    isActive     Boolean   @default(true)
+    startDateKey String
+    createdAt    DateTime  @default(now())
+    updatedAt    DateTime  @updatedAt
+
+    @@index([userId, isActive])
+  }
+
+  model CheckIn {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    habitId     String   @db.ObjectId
+    completedAt DateTime
+    dateKey     String
+    createdAt   DateTime @default(now())
+
+    @@unique([habitId, dateKey])
+    @@index([userId, dateKey])
   }

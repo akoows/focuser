@@ -1,11 +1,26 @@
 import { useEffect, useState, type AnimationEvent, type FormEvent } from "react";
+import {
+  createCheckIn,
+  createHabit,
+  deleteCheckIn,
+  deleteHabit as deleteHabitRequest,
+  getDashboard,
+  getHabitCheckIns,
+  getTodayCheckIns,
+  listHabits,
+  updateHabit,
+} from "../services/habitsService";
+import type { ApiCheckIn, ApiDashboard, ApiHabit, ApiFrequency } from "../types/api";
 
 type Habit = {
   id: string;
   title: string;
   description: string;
   timesPerWeek: number;
+  frequency: ApiFrequency;
+  daysOfWeek: number[];
   completionDates: string[];
+  checkInIds: Record<string, string>;
 };
 
 type FocusSession = {
@@ -25,34 +40,9 @@ type MonthCell = {
   dateKey: string;
 };
 
-const HABITS_STORAGE_KEY = "focuser.habits";
 const THEME_STORAGE_KEY = "focuser.theme";
 const ACCENT_COLOR_STORAGE_KEY = "focuser.accent-color";
 const DEFAULT_ACCENT_COLOR = "#ffffff";
-
-const initialHabits: Habit[] = [
-  {
-    id: "react",
-    title: "Estudar React",
-    description: "Revisar componentes e praticar hooks.",
-    timesPerWeek: 3,
-    completionDates: [],
-  },
-  {
-    id: "workout",
-    title: "Treinar",
-    description: "Fazer uma sessão de treino e alongamento.",
-    timesPerWeek: 4,
-    completionDates: [],
-  },
-  {
-    id: "reading",
-    title: "Ler 20 páginas",
-    description: "Avançar na leitura do livro atual.",
-    timesPerWeek: 5,
-    completionDates: [],
-  },
-];
 
 function getLocalDateKey(date: Date) {
   const year = date.getFullYear();
@@ -62,35 +52,46 @@ function getLocalDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function loadHabits(): Habit[] {
-  try {
-    const savedHabits = window.localStorage.getItem(HABITS_STORAGE_KEY);
-    if (!savedHabits) return initialHabits;
-
-    const parsedHabits: unknown = JSON.parse(savedHabits);
-    if (!Array.isArray(parsedHabits)) return initialHabits;
-
-    return parsedHabits.map((habit) => {
-      const completionDates = Array.isArray(habit.completionDates) ? habit.completionDates : [];
-
-      return {
-        ...habit,
-        completionDates: habit.completed && completionDates.length === 0
-          ? [getLocalDateKey(new Date())]
-          : completionDates,
-      };
-    }) as Habit[];
-  } catch {
-    return initialHabits;
-  }
-}
-
 function loadLightMode() {
   try {
     return window.localStorage.getItem(THEME_STORAGE_KEY) === "light";
   } catch {
     return false;
   }
+}
+
+function toLocalHabit(habit: ApiHabit, checkIns: ApiCheckIn[] = []): Habit {
+  const checkInIds = Object.fromEntries(
+    checkIns
+      .filter((checkIn) => checkIn.habitId === habit.id)
+      .map((checkIn) => [checkIn.dateKey, checkIn.id])
+  );
+
+  return {
+    id: habit.id,
+    title: habit.name,
+    description: habit.description ?? "",
+    timesPerWeek: habit.frequency === "DAILY" ? 7 : habit.daysOfWeek.length,
+    frequency: habit.frequency,
+    daysOfWeek: habit.daysOfWeek,
+    completionDates: Object.keys(checkInIds),
+    checkInIds,
+  };
+}
+
+function toApiHabitInput(
+  name: string,
+  description: string,
+  daysOfWeek: number[]
+) {
+  const normalizedDays = [...new Set(daysOfWeek)].sort((left, right) => left - right);
+
+  return {
+    name,
+    description: description || null,
+    frequency: (normalizedDays.length === 7 ? "DAILY" : "CUSTOM") as ApiFrequency,
+    daysOfWeek: normalizedDays,
+  };
 }
 
 function loadAccentColor() {
@@ -196,7 +197,10 @@ export function useMainPage() {
   const [activeTab, setActiveTab] = useState("today");
   const [isLightMode, setIsLightMode] = useState(loadLightMode);
   const [accentColor, setAccentColor] = useState(loadAccentColor);
-  const [tasks, setTasks] = useState<Habit[]>(loadHabits);
+  const [tasks, setTasks] = useState<Habit[]>([]);
+  const [dashboard, setDashboard] = useState<ApiDashboard | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedGoalHabitId, setSelectedGoalHabitId] = useState<string | null>(null);
   const [selectedMonthDate, setSelectedMonthDate] = useState(() => {
     const now = new Date();
@@ -210,7 +214,8 @@ export function useMainPage() {
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
-  const [timesPerWeek, setTimesPerWeek] = useState(1);
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([1]);
+  const [isSavingTask, setIsSavingTask] = useState(false);
   const [isFocusActive, setIsFocusActive] = useState(false);
   const [focusStartedAt, setFocusStartedAt] = useState<number | null>(null);
   const [elapsedFocusSeconds, setElapsedFocusSeconds] = useState(0);
@@ -219,7 +224,7 @@ export function useMainPage() {
   const [hoveredFocusDay, setHoveredFocusDay] = useState<string | null>(null);
   const accentForeground = getAccentForeground(accentColor);
   const todayDate = new Date();
-  const todayKey = getLocalDateKey(todayDate);
+  const [todayKey, setTodayKey] = useState(() => getLocalDateKey(todayDate));
   const weekDateKeys = getWeekDateKeys(todayDate);
   const monthCalendar = getMonthCalendar(selectedMonthDate);
   const availableYears = Array.from({ length: 12 }, (_, index) => todayDate.getFullYear() - index);
@@ -248,13 +253,87 @@ export function useMainPage() {
     return { ...day, x, y };
   });
 
-  useEffect(() => {
+  async function refreshRemoteData() {
+    setIsLoading(true);
+    setErrorMessage(null);
+
     try {
-      window.localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(tasks));
-    } catch {
-      return;
+      const [habitsResponse, todayResponse, dashboardResponse] = await Promise.all([
+        listHabits(),
+        getTodayCheckIns(),
+        getDashboard(),
+      ]);
+      setTodayKey(todayResponse.date);
+      setTasks(habitsResponse.items.map((habit) => toLocalHabit(habit, todayResponse.items)));
+      setDashboard(dashboardResponse);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Não foi possível carregar os dados."
+      );
+    } finally {
+      setIsLoading(false);
     }
-  }, [tasks]);
+  }
+
+  async function refreshDashboard() {
+    try {
+      setDashboard(await getDashboard());
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Não foi possível atualizar o painel."
+      );
+    }
+  }
+
+  useEffect(() => {
+    void refreshRemoteData();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "goals" || !selectedGoalHabit) return;
+
+    let isActive = true;
+    const [year, month] = monthCalendar.value.split("-").map(Number);
+    const monthStart = `${monthCalendar.value}-01`;
+    const monthEnd = getLocalDateKey(new Date(year, month, 0));
+    const from = monthStart < weekDateKeys[0] ? monthStart : weekDateKeys[0];
+    const to = monthEnd > todayKey ? monthEnd : todayKey;
+
+    getHabitCheckIns(selectedGoalHabit.id, from, to)
+      .then((checkIns) => {
+        if (!isActive) return;
+
+        setTasks((currentTasks) => currentTasks.map((habit) => {
+          if (habit.id !== selectedGoalHabit.id) return habit;
+          const retainedDates = habit.completionDates.filter(
+            (date) => date < from || date > to
+          );
+          const retainedIds = Object.fromEntries(
+            Object.entries(habit.checkInIds).filter(([date]) => date < from || date > to)
+          );
+          const loadedIds = Object.fromEntries(
+            checkIns.map((checkIn) => [checkIn.dateKey, checkIn.id])
+          );
+
+          return {
+            ...habit,
+            completionDates: [...new Set([...retainedDates, ...Object.keys(loadedIds)])],
+            checkInIds: { ...retainedIds, ...loadedIds },
+          };
+        }));
+      })
+      .catch((error: unknown) => {
+        if (isActive) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Não foi possível carregar os check-ins."
+          );
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeTab, selectedGoalHabit?.id, monthCalendar.value]);
 
   useEffect(() => {
     try {
@@ -314,27 +393,52 @@ export function useMainPage() {
     setElapsedFocusSeconds(0);
   }
 
-  function toggleTask(taskId: string) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) => {
-        if (task.id !== taskId) return task;
+  async function toggleTask(taskId: string) {
+    const task = tasks.find((habit) => habit.id === taskId);
+    if (!task) return;
 
-        const isCompletedToday = task.completionDates.includes(todayKey);
-        return {
-          ...task,
-          completionDates: isCompletedToday
-            ? task.completionDates.filter((date) => date !== todayKey)
-            : [...task.completionDates, todayKey],
-        };
-      })
-    );
+    setErrorMessage(null);
+    try {
+      if (task.completionDates.includes(todayKey)) {
+        const checkInId = task.checkInIds[todayKey];
+        if (!checkInId) throw new Error("Não foi possível localizar o check-in para remover.");
+        await deleteCheckIn(taskId, checkInId);
+        setTasks((currentTasks) => currentTasks.map((habit) => {
+          if (habit.id !== taskId) return habit;
+          const checkInIds = { ...habit.checkInIds };
+          delete checkInIds[todayKey];
+          return {
+            ...habit,
+            checkInIds,
+            completionDates: habit.completionDates.filter((date) => date !== todayKey),
+          };
+        }));
+      } else {
+        const checkIn = await createCheckIn(taskId);
+        setTodayKey(checkIn.dateKey);
+        setTasks((currentTasks) => currentTasks.map((habit) =>
+          habit.id === taskId
+            ? {
+              ...habit,
+              checkInIds: { ...habit.checkInIds, [checkIn.dateKey]: checkIn.id },
+              completionDates: [...new Set([...habit.completionDates, checkIn.dateKey])],
+            }
+            : habit
+        ));
+      }
+      await refreshDashboard();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Não foi possível atualizar o check-in."
+      );
+    }
   }
 
   function openNewTaskDialog() {
     setEditingTaskId(null);
     setTaskTitle("");
     setTaskDescription("");
-    setTimesPerWeek(1);
+    setDaysOfWeek([1]);
     setIsTaskDialogClosing(false);
     setIsTaskDialogOpen(true);
   }
@@ -343,7 +447,7 @@ export function useMainPage() {
     setEditingTaskId(task.id);
     setTaskTitle(task.title);
     setTaskDescription(task.description);
-    setTimesPerWeek(task.timesPerWeek);
+    setDaysOfWeek(task.daysOfWeek);
     closeTaskMenu(task.id);
     setIsTaskDialogClosing(false);
     setIsTaskDialogOpen(true);
@@ -371,44 +475,58 @@ export function useMainPage() {
     }
   }
 
-  function handleTaskRowAnimationEnd(event: AnimationEvent<HTMLElement>, taskId: string) {
+  async function handleTaskRowAnimationEnd(event: AnimationEvent<HTMLElement>, taskId: string) {
     if (event.target === event.currentTarget && event.animationName === "task-row-out") {
-      setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
-      setDeletingTaskId(null);
+      try {
+        await deleteHabitRequest(taskId);
+        setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
+        await refreshDashboard();
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Não foi possível excluir o hábito."
+        );
+      } finally {
+        setDeletingTaskId(null);
+      }
     }
   }
 
-  function handleSaveTask(event: FormEvent<HTMLFormElement>) {
+  async function handleSaveTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const title = taskTitle.trim();
     const description = taskDescription.trim();
 
-    if (!title || !description) return;
+    if (!title || daysOfWeek.length === 0) return;
 
-    if (editingTaskId) {
-      setTasks((currentTasks) =>
-        currentTasks.map((task) =>
-          task.id === editingTaskId ? { ...task, title, description, timesPerWeek } : task
-        )
+    setErrorMessage(null);
+    setIsSavingTask(true);
+    try {
+      const input = toApiHabitInput(title, description, daysOfWeek);
+      if (editingTaskId) {
+        const updatedHabit = await updateHabit(editingTaskId, input);
+        setTasks((currentTasks) => currentTasks.map((task) =>
+          task.id === editingTaskId
+            ? { ...toLocalHabit(updatedHabit), completionDates: task.completionDates, checkInIds: task.checkInIds }
+            : task
+        ));
+      } else {
+        const createdHabit = await createHabit(input);
+        setTasks((currentTasks) => [...currentTasks, toLocalHabit(createdHabit)]);
+      }
+      await refreshDashboard();
+
+      setTaskTitle("");
+      setTaskDescription("");
+      setDaysOfWeek([1]);
+      setEditingTaskId(null);
+      closeTaskDialog();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Não foi possível salvar o hábito."
       );
-    } else {
-      setTasks((currentTasks) => [
-        ...currentTasks,
-        {
-          id: crypto.randomUUID(),
-          title,
-          description,
-          timesPerWeek,
-          completionDates: [],
-        },
-      ]);
+    } finally {
+      setIsSavingTask(false);
     }
-
-    setTaskTitle("");
-    setTaskDescription("");
-    setTimesPerWeek(1);
-    setEditingTaskId(null);
-    closeTaskDialog();
   }
 
   function deleteTask(taskId: string) {
@@ -440,8 +558,14 @@ export function useMainPage() {
     setTaskTitle,
     taskDescription,
     setTaskDescription,
-    timesPerWeek,
-    setTimesPerWeek,
+    daysOfWeek,
+    setDaysOfWeek,
+    isSavingTask,
+    dashboard,
+    isLoading,
+    errorMessage,
+    clearError: () => setErrorMessage(null),
+    refreshRemoteData,
     isFocusActive,
     elapsedFocusSeconds,
     totalFocusSeconds,

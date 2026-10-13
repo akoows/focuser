@@ -1,6 +1,22 @@
 import "./MainPage.css";
 import { useEffect, useState, type CSSProperties } from "react";
 import { formatFocusTotal, formatTimer, useMainPage } from "./useMainPage";
+import type { ApiUser } from "../types/api";
+
+type MainPageProps = {
+  user: ApiUser;
+  onLogout: () => Promise<void>;
+};
+
+const scheduleDays = [
+  { value: 1, label: "Seg" },
+  { value: 2, label: "Ter" },
+  { value: 3, label: "Qua" },
+  { value: 4, label: "Qui" },
+  { value: 5, label: "Sex" },
+  { value: 6, label: "Sáb" },
+  { value: 0, label: "Dom" },
+];
 
 const accentColorOptions = [
   { value: "#ffffff", label: "Branco" },
@@ -33,7 +49,7 @@ const monthOptions = Array.from({ length: 12 }, (_, monthIndex) => ({
   label: new Date(2024, monthIndex, 1).toLocaleDateString("pt-BR", { month: "long" }),
 }));
 
-function MainPage() {
+function MainPage({ user, onLogout }: MainPageProps) {
   const {
     activeTab,
     setActiveTab,
@@ -58,8 +74,14 @@ function MainPage() {
     setTaskTitle,
     taskDescription,
     setTaskDescription,
-    timesPerWeek,
-    setTimesPerWeek,
+    daysOfWeek,
+    setDaysOfWeek,
+    isSavingTask,
+    dashboard,
+    isLoading,
+    errorMessage,
+    clearError,
+    refreshRemoteData,
     isFocusActive,
     elapsedFocusSeconds,
     totalFocusSeconds,
@@ -93,6 +115,8 @@ function MainPage() {
     startFocus,
     stopFocus,
   } = useMainPage();
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [accentColorDraft, setAccentColorDraft] = useState(accentColor);
   useEffect(() => setAccentColorDraft(accentColor), [accentColor]);
 
@@ -105,6 +129,24 @@ function MainPage() {
     if (!/^#[0-9a-fA-F]{6}$/.test(accentColorDraft)) {
       setAccentColorDraft(accentColor);
     }
+  }
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    setLogoutError(null);
+    try {
+      await onLogout();
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : "Não foi possível encerrar a sessão.");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }
+
+  function toggleScheduleDay(day: number) {
+    setDaysOfWeek((currentDays) => currentDays.includes(day)
+      ? currentDays.filter((value) => value !== day)
+      : [...currentDays, day]);
   }
 
   const accentStyle: CSSProperties & {
@@ -133,6 +175,9 @@ function MainPage() {
       dateKey: day.dateKey,
     })),
   ];
+  const todayWeekday = new Date(`${todayKey}T12:00:00`).getDay();
+  const isScheduledToday = (habit: (typeof tasks)[number]) =>
+    habit.frequency === "DAILY" || habit.daysOfWeek.includes(todayWeekday);
 
   if (isFocusActive) {
     return (
@@ -179,13 +224,21 @@ function MainPage() {
 
         <div className="sidebar-bottom">
           <div className="user">
-            <div className="user-avatar">A</div>
+          <div className="user-avatar">{user.name.slice(0, 1).toUpperCase()}</div>
 
             <div>
-              <strong>Admin</strong>
-              <small>Conta pessoal</small>
+            <strong>{user.name}</strong>
+            <small>{user.email}</small>
             </div>
           </div>
+          <button
+          className="sign-out-button"
+          disabled={isLoggingOut}
+          onClick={handleLogout}
+          type="button"
+          >
+          {isLoggingOut ? "Saindo..." : "Sair"}
+          </button>
         </div>
 
       </aside>
@@ -211,6 +264,29 @@ function MainPage() {
           )}
         </header>
 
+        {(errorMessage || logoutError) && (
+          <div className="api-error-banner" role="alert">
+            <span>{errorMessage || logoutError}</span>
+            <div>
+              {errorMessage && (
+                <button onClick={refreshRemoteData} type="button">Tentar novamente</button>
+              )}
+              <button
+                aria-label="Fechar mensagem"
+                onClick={() => {
+                  clearError();
+                  setLogoutError(null);
+                }}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isLoading && <p className="data-loading">Carregando seus dados...</p>}
+
         {activeTab === "today" ? <>
           <section className="stats">
 
@@ -219,10 +295,17 @@ function MainPage() {
               Hábitos do dia
             </span>
 
-            <strong>{completedHabits} / {tasks.length}</strong>
+            <strong>{dashboard?.completed ?? completedHabits} / {dashboard?.scheduled ?? tasks.length}</strong>
 
             <div className="progress">
-              <div className="progress-value" style={{ width: `${habitsProgress}%` }} />
+              <div
+                className="progress-value"
+                style={{
+                  width: `${dashboard?.completionRate !== undefined
+                    ? dashboard.completionRate * 100
+                    : habitsProgress}%`,
+                }}
+              />
             </div>
           </div>
 
@@ -232,10 +315,19 @@ function MainPage() {
               Meta semanal
             </span>
 
-            <strong>0 / 7</strong>
+            <strong>
+              {dashboard?.progress.last7Days.completed ?? 0} / {dashboard?.progress.last7Days.scheduled ?? 0}
+            </strong>
 
             <div className="progress">
-              <div className="progress-value" style={{ width: "0%" }} />
+              <div
+                className="progress-value"
+                style={{
+                  width: `${dashboard && dashboard.progress.last7Days.scheduled > 0
+                    ? dashboard.progress.last7Days.completionRate * 100
+                    : 0}%`,
+                }}
+              />
             </div>
           </div>
 
@@ -358,6 +450,7 @@ function MainPage() {
                   aria-label={`${task.completionDates.includes(todayKey) ? "Desmarcar" : "Marcar"} ${task.title}`}
                   aria-pressed={task.completionDates.includes(todayKey)}
                   className={`task-check ${task.completionDates.includes(todayKey) ? "checked" : ""}`}
+                  disabled={!isScheduledToday(task)}
                   onClick={() => toggleTask(task.id)}
                   type="button"
                 >
@@ -395,6 +488,7 @@ function MainPage() {
                       aria-label={`${task.completionDates.includes(todayKey) ? "Desmarcar" : "Marcar"} ${task.title}`}
                       aria-pressed={task.completionDates.includes(todayKey)}
                       className={`task-check ${task.completionDates.includes(todayKey) ? "checked" : ""}`}
+                      disabled={!isScheduledToday(task)}
                       onClick={() => toggleTask(task.id)}
                       type="button"
                     >
@@ -685,26 +779,30 @@ function MainPage() {
                 <label htmlFor="task-description">Descrição</label>
                 <textarea
                   id="task-description"
-                  maxLength={300}
+                  maxLength={500}
                   onChange={(event) => setTaskDescription(event.target.value)}
                   placeholder="Descreva o que você quer fazer"
-                  required
                   rows={3}
                   value={taskDescription}
                 />
 
-                <label htmlFor="task-frequency">Quantas vezes por semana?</label>
-                <select
-                  id="task-frequency"
-                  onChange={(event) => setTimesPerWeek(Number(event.target.value))}
-                  value={timesPerWeek}
-                >
-                  {Array.from({ length: 7 }, (_, index) => index + 1).map((frequency) => (
-                    <option key={frequency} value={frequency}>
-                      {frequency} {frequency === 1 ? "vez" : "vezes"} por semana
-                    </option>
-                  ))}
-                </select>
+                <fieldset className="schedule-days-field">
+                  <legend>Dias do hábito</legend>
+                  <div className="schedule-day-options">
+                    {scheduleDays.map((day) => (
+                      <button
+                        aria-pressed={daysOfWeek.includes(day.value)}
+                        className={`schedule-day-option ${daysOfWeek.includes(day.value) ? "selected" : ""}`}
+                        key={day.value}
+                        onClick={() => toggleScheduleDay(day.value)}
+                        type="button"
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                  <small>Selecione ao menos um dia da semana.</small>
+                </fieldset>
 
                 <div className="task-form-actions">
                   <button
@@ -714,8 +812,16 @@ function MainPage() {
                   >
                     Cancelar
                   </button>
-                  <button className="task-submit-button" type="submit">
-                    {editingTaskId ? "Salvar alterações" : "Adicionar hábito"}
+                  <button
+                    className="task-submit-button"
+                    disabled={daysOfWeek.length === 0 || isSavingTask}
+                    type="submit"
+                  >
+                    {isSavingTask
+                      ? "Salvando..."
+                      : editingTaskId
+                        ? "Salvar alterações"
+                        : "Adicionar hábito"}
                   </button>
                 </div>
               </form>
