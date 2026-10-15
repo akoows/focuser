@@ -1,196 +1,257 @@
-'use strict';
-// Schemas Zod. Todos usam .strict(): campos desconhecidos (userId, isActive, role, passwordHash...)
-// são REJEITADOS com 400 — proteção contra mass assignment e manipulação de query strings.
-const { z } = require('zod');
-const { isValidDateKey, isValidTimeZone } = require('../utils/dates');
-const { OBJECT_ID_REGEX } = require('../utils/constants');
-const { normalizeIsbn, isValidIsbn } = require('../utils/isbn');
+import { z } from "zod";
+import { HttpError } from "../utils/apiResponse.js";
+import { isDateKey } from "../utils/date.js";
 
-const objectId = z.string().regex(OBJECT_ID_REGEX, 'ID inválido');
-const dateKey = z.string().refine(isValidDateKey, 'Data inválida (use YYYY-MM-DD)');
-const timezone = z.string().max(64).refine(isValidTimeZone, 'Fuso horário inválido (use nome IANA, ex.: America/Sao_Paulo)');
-const accentColor = z.string().regex(/^#[\da-f]{6}$/i, 'Cor inválida (use hexadecimal no formato #RRGGBB)');
-const username = z.string().trim().toLowerCase().regex(/^[a-z0-9._]{3,30}$/, 'Use de 3 a 30 letras, números, pontos ou sublinhados').nullable();
-const requiredUsername = z.string().trim().toLowerCase().regex(/^[a-z0-9._]{3,30}$/, 'Use de 3 a 30 letras, números, pontos ou sublinhados');
-const email = z.string().trim().toLowerCase().email('E-mail inválido').max(254);
-const name = z.string().trim().min(1, 'Nome obrigatório').max(80);
-// bcrypt só considera os primeiros 72 BYTES: rejeitamos acima disso para não truncar silenciosamente.
-const password = z.string().min(8, 'Senha deve ter ao menos 8 caracteres').max(128)
-  .refine((p) => Buffer.byteLength(p, 'utf8') <= 72, 'Senha excede 72 bytes');
+const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Identificador inválido.");
+const dateKey = z.string().refine(isDateKey, "Data deve estar no formato YYYY-MM-DD.");
+const email = z.string().trim().email().max(254).transform((value) => value.toLowerCase());
+const username = z.string().trim().toLowerCase().regex(/^[a-z0-9._]{3,30}$/, "Use de 3 a 30 letras, números, pontos ou sublinhados");
+const bio = z.string().trim().max(500).nullable();
+const password = z.string().min(8).max(128).refine(
+    (value) => Buffer.byteLength(value, "utf8") <= 72,
+    "A senha não pode exceder 72 bytes."
+);
+const timezone = z.string().min(1).max(100).refine((value) => {
+    try {
+        new Intl.DateTimeFormat("en-US", { timeZone: value });
+        return true;
+    } catch {
+        return false;
+    }
+}, "Fuso horário inválido.");
+const dayOfWeek = z.number().int().min(0).max(6);
 
-const days = z.array(z.number().int().min(0).max(6)).min(1).max(7)
-  .refine((a) => new Set(a).size === a.length, 'daysOfWeek contém valores repetidos');
-const frequency = z.enum(['DAILY', 'CUSTOM']);
-const habitName = z.string().trim().min(1, 'Nome obrigatório').max(100);
-const habitDescription = z.string().trim().max(500);
-const goalName = z.string().trim().min(1, 'Nome obrigatório').max(100);
-const goalDescription = z.string().trim().max(500);
-const goalCategory = z.string().trim().min(1).max(60);
-const goalUnit = z.string().trim().min(1).max(30);
-const goalValue = z.number().finite().positive().max(1000000000);
-const goalCurrentValue = z.number().finite().min(0).max(1000000000);
-const focusTitle = z.string().trim().min(1, 'Título obrigatório').max(120);
-const bookTitle = z.string().trim().min(1, 'Título obrigatório').max(160);
-const bookAuthor = z.string().trim().min(1).max(120);
-const isbn = z.string().trim().transform(normalizeIsbn)
-  .refine(isValidIsbn, 'ISBN inválido (use um ISBN-10 ou ISBN-13 válido)');
-const coverUrl = z.string().url().max(2000).refine((value) => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'https:' && ['books.google.com', 'books.googleusercontent.com', 'covers.openlibrary.org'].includes(parsed.hostname);
-  } catch {
-    return false;
-  }
-}, 'URL de capa inválida');
-
-const freqIssues = (v, ctx) => {
-  if (v.frequency === 'DAILY' && v.daysOfWeek) ctx.addIssue({ code: 'custom', path: ['daysOfWeek'], message: 'daysOfWeek só é permitido quando frequency=CUSTOM' });
-  if (v.frequency === 'CUSTOM' && !v.daysOfWeek) ctx.addIssue({ code: 'custom', path: ['daysOfWeek'], message: 'daysOfWeek é obrigatório quando frequency=CUSTOM' });
-};
-
-const page = z.coerce.number().int().min(1).max(10000).default(1);
-const limit = z.coerce.number().int().min(1).max(100).default(20);
-
-module.exports = {
-  idParam: z.object({ id: objectId }).strict(),
-  checkInParams: z.object({ id: objectId, checkInId: objectId }).strict(),
-
-  register: z.object({
-    name, username: requiredUsername, email, password, timezone: timezone.optional(),
-    avatarUploadId: objectId, avatarUrl: z.string().url().max(1000),
-    bannerUploadId: objectId.optional(), bannerUrl: z.string().url().max(1000).optional(),
-  }).strict().refine((v) => Boolean(v.bannerUploadId) === Boolean(v.bannerUrl), {
-    path: ['bannerUrl'],
-    message: 'O upload do banner está incompleto.',
-  }),
-  publicUsernameParam: z.object({
-    username: z.string().trim().toLowerCase().regex(/^[a-z0-9._]{3,30}$/, 'Nome de usuário inválido'),
-  }).strict(),
-  readingFocusStart: z.object({
-    bookId: objectId,
-    sessionId: z.string().uuid(),
-  }).strict(),
-  readingFocusStop: z.object({
-    sessionId: z.string().uuid(),
-  }).strict(),
-  friendRequestCreate: z.object({ username: requiredUsername }).strict(),
-  login: z.object({ email, password: z.string().min(1).max(128) }).strict(),
-  emailOnly: z.object({ email }).strict(),
-  emailCode: z.object({ email, code: z.string().regex(/^\d{6}$/, 'Código inválido') }).strict(),
-  userUpdate: z.object({
-    name: name.optional(),
-    username: username.optional(),
-    bio: z.string().trim().max(500).nullable().optional(),
+export const registerSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    username,
+    email,
+    password,
     timezone: timezone.optional(),
-    accentColor: accentColor.optional(),
+    avatarUploadId: objectId,
+    avatarUrl: z.string().url().max(1000),
+    bannerUploadId: objectId.optional(),
+    bannerUrl: z.string().url().max(1000).optional(),
+}).strict().refine((value) => Boolean(value.bannerUploadId) === Boolean(value.bannerUrl), {
+    path: ["bannerUrl"],
+    message: "O upload do banner está incompleto.",
+});
+
+export const loginSchema = z.object({
+    email,
+    password: z.string().min(1).max(128).refine(
+        (value) => Buffer.byteLength(value, "utf8") <= 72,
+        "A senha não pode exceder 72 bytes."
+    ),
+}).strict();
+
+export const emailOnlySchema = z.object({ email }).strict();
+export const emailCodeSchema = z.object({
+    email,
+    code: z.string().regex(/^\d{6}$/, "Código inválido."),
+}).strict();
+
+export const updateUserSchema = z.object({
+    name: z.string().trim().min(1).max(80).optional(),
+    username: username.nullable().optional(),
+    bio: bio.optional(),
+    timezone: timezone.optional(),
+    accentColor: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida.").optional(),
     avatarUrl: z.string().url().max(1000).nullable().optional(),
     bannerUrl: z.string().url().max(1000).nullable().optional(),
     currentBookId: objectId.nullable().optional(),
     favoriteBookId: objectId.nullable().optional(),
-  }).strict()
-    .refine((v) => Object.keys(v).length > 0, 'Informe ao menos um campo'),
-  passwordChangeStart: z.object({
+}).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
+
+export const publicUsernameParamSchema = z.object({
+    username,
+}).strict();
+
+export const friendRequestCreateSchema = z.object({
+    username,
+}).strict();
+
+export const passwordChangeStartSchema = z.object({
     currentPassword: z.string().min(1).max(128),
     newPassword: password,
-  }).strict().refine((v) => v.currentPassword !== v.newPassword, {
-    path: ['newPassword'],
-    message: 'A nova senha deve ser diferente da senha atual',
-  }),
-  passwordChangeVerify: z.object({ code: z.string().regex(/^\d{6}$/, 'Código inválido'), newPassword: password }).strict(),
+}).strict().refine((value) => value.currentPassword !== value.newPassword, {
+    path: ["newPassword"],
+    message: "A nova senha deve ser diferente da senha atual.",
+});
 
-  habitCreate: z.object({
-    name: habitName, description: habitDescription.optional(),
-    frequency: frequency.default('DAILY'), daysOfWeek: days.optional(),
-  }).strict().superRefine(freqIssues),
-  habitUpdate: z.object({
-    name: habitName.optional(), description: habitDescription.nullable().optional(),
-    frequency: frequency.optional(), daysOfWeek: days.optional(),
-  }).strict().superRefine((v, ctx) => {
-    if (Object.keys(v).length === 0) ctx.addIssue({ code: 'custom', message: 'Informe ao menos um campo' });
-    if (v.frequency) freqIssues(v, ctx);
-  }),
-  habitArchive: z.object({ archived: z.boolean().optional() }).strict(),
-  habitListQuery: z.object({ status: z.enum(['active', 'archived', 'all']).default('active'), page, limit }).strict(),
+export const passwordChangeVerifySchema = z.object({
+    code: z.string().regex(/^\d{6}$/, "Código inválido."),
+    newPassword: password,
+}).strict();
 
-  goalCreate: z.object({
-    name: goalName,
-    description: goalDescription.optional(),
-    category: goalCategory.optional(),
-    targetValue: goalValue,
-    currentValue: goalCurrentValue.default(0),
-    unit: goalUnit,
-    period: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']).default('MONTHLY'),
-  }).strict(),
-  goalUpdate: z.object({
-    name: goalName.optional(),
-    description: goalDescription.nullable().optional(),
-    category: goalCategory.nullable().optional(),
-    targetValue: goalValue.optional(),
-    currentValue: goalCurrentValue.optional(),
-    unit: goalUnit.optional(),
-    period: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']).optional(),
+export const goalCreateSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.string().trim().max(60).nullable().optional(),
+    targetValue: z.number().finite().positive().max(1_000_000_000),
+    currentValue: z.number().finite().min(0).max(1_000_000_000).default(0),
+    unit: z.string().trim().min(1).max(30),
+    period: z.enum(["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]).default("MONTHLY"),
+}).strict();
+
+export const goalUpdateSchema = z.object({
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.string().trim().max(60).nullable().optional(),
+    targetValue: z.number().finite().positive().max(1_000_000_000).optional(),
+    currentValue: z.number().finite().min(0).max(1_000_000_000).optional(),
+    unit: z.string().trim().min(1).max(30).optional(),
+    period: z.enum(["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]).optional(),
     isActive: z.boolean().optional(),
-  }).strict().refine((v) => Object.keys(v).length > 0, 'Informe ao menos um campo'),
-  goalProgress: z.object({ amount: z.number().finite().positive().max(1000000000) }).strict(),
-  goalListQuery: z.object({
-    status: z.enum(['active', 'archived', 'all']).default('active'),
-    page,
-    limit,
-  }).strict(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
 
-  focusSessionCreate: z.object({
-    title: focusTitle.default('Sessão de foco'),
-    plannedMinutes: z.number().int().min(1).max(240).default(25),
+export const goalProgressSchema = z.object({
+    amount: z.number().finite().positive().max(1_000_000_000).default(1),
+}).strict();
+
+export const focusSessionCreateSchema = z.object({
+    title: z.string().trim().min(1).max(120).default("Sessão de foco"),
+    plannedMinutes: z.number().int().min(1).max(480).default(25),
     goalId: objectId.optional(),
-  }).strict(),
-  focusSessionListQuery: z.object({
-    status: z.enum(['RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
-    page,
-    limit,
-  }).strict(),
+}).strict();
 
-  readingBookCreate: z.object({
-    title: bookTitle,
-    author: bookAuthor.optional(),
-    isbn: isbn.optional(),
-    coverId: z.number().int().positive().max(2147483647).nullable().optional(),
-    coverUrl: coverUrl.nullable().optional(),
-    totalPages: z.number().int().min(1).max(100000),
-    currentPage: z.number().int().min(0).max(100000).default(0),
-  }).strict().refine((value) => value.currentPage <= value.totalPages, {
-    path: ['currentPage'],
-    message: 'A página atual não pode ser maior que o total de páginas',
-  }),
-  readingBookUpdate: z.object({
-    title: bookTitle.optional(),
-    author: bookAuthor.nullable().optional(),
-    isbn: isbn.nullable().optional(),
-    coverId: z.number().int().positive().max(2147483647).nullable().optional(),
-    coverUrl: coverUrl.nullable().optional(),
-    totalPages: z.number().int().min(1).max(100000).optional(),
-    currentPage: z.number().int().min(0).max(100000).optional(),
+export const readingBookCreateSchema = z.object({
+    title: z.string().trim().min(1).max(160),
+    author: z.string().trim().max(120).nullable().optional(),
+    isbn: z.string().trim().max(20).nullable().optional(),
+    coverId: z.number().int().positive().nullable().optional(),
+    coverUrl: z.string().url().max(2048).refine((value) => value.startsWith("https://"),
+        "A capa deve usar HTTPS.").nullable().optional(),
+    totalPages: z.number().int().min(1).max(100_000),
+    currentPage: z.number().int().min(0).max(100_000).default(0),
+}).strict().refine((value) => value.currentPage <= value.totalPages, {
+    path: ["currentPage"],
+    message: "A página atual não pode exceder o total.",
+});
+
+export const readingBookUpdateSchema = z.object({
+    title: z.string().trim().min(1).max(160).optional(),
+    author: z.string().trim().max(120).nullable().optional(),
+    isbn: z.string().trim().max(20).nullable().optional(),
+    coverId: z.number().int().positive().nullable().optional(),
+    coverUrl: z.string().url().max(2048).refine((value) => value.startsWith("https://"),
+        "A capa deve usar HTTPS.").nullable().optional(),
+    totalPages: z.number().int().min(1).max(100_000).optional(),
+    currentPage: z.number().int().min(0).max(100_000).optional(),
     isActive: z.boolean().optional(),
-  }).strict().refine((value) => Object.keys(value).length > 0, 'Informe ao menos um campo'),
-  readingBookListQuery: z.object({
-    status: z.enum(['active', 'archived', 'all']).default('active'),
-    page,
-    limit,
-  }).strict(),
-  isbnLookup: z.object({
-    title: bookTitle,
-    author: bookAuthor.optional(),
-  }).strict(),
-  readingLogCreate: z.object({
-    pagesRead: z.number().int().min(1).max(10000),
-    minutesRead: z.number().int().min(1).max(1440),
-  }).strict(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
 
-  checkInCreate: z.object({ date: dateKey.optional() }).strict(),
-  checkInListQuery: z.object({ from: dateKey.optional(), to: dateKey.optional(), page, limit }).strict(),
+export const readingLogCreateSchema = z.object({
+    pagesRead: z.number().int().min(1).max(10_000),
+    minutesRead: z.number().int().min(1).max(1_440),
+}).strict();
 
-  dashboardQuery: z.object({ date: dateKey.optional() }).strict(),
-  rangeQuery: z.object({ period: z.enum(['week', 'month']).optional(), from: dateKey.optional(), to: dateKey.optional() }).strict()
-    .refine((v) => !(v.period && (v.from || v.to)), 'Use "period" OU "from"/"to", não ambos'),
+export const isbnLookupSchema = z.object({
+    title: z.string().trim().min(1).max(160),
+    author: z.string().trim().max(120).optional(),
+}).strict();
 
-  aiAnalyze: z.object({ period: z.enum(['week', 'month', 'quarter']).default('month') }).strict(),
-};
+export const habitCreateSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    frequency: z.enum(["DAILY", "CUSTOM"]).default("DAILY"),
+    daysOfWeek: z.array(dayOfWeek).max(7).optional(),
+}).strict().superRefine((value, context) => {
+    if (value.frequency === "CUSTOM" && (!value.daysOfWeek || value.daysOfWeek.length === 0)) {
+        context.addIssue({
+            code: "custom",
+            path: ["daysOfWeek"],
+            message: "Informe ao menos um dia para frequência CUSTOM.",
+        });
+    }
+    if (value.daysOfWeek && new Set(value.daysOfWeek).size !== value.daysOfWeek.length) {
+        context.addIssue({ code: "custom", path: ["daysOfWeek"], message: "Dias duplicados." });
+    }
+});
+
+export const habitUpdateSchema = z.object({
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    frequency: z.enum(["DAILY", "CUSTOM"]).optional(),
+    daysOfWeek: z.array(dayOfWeek).max(7).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.")
+    .refine((value) => !value.daysOfWeek || new Set(value.daysOfWeek).size === value.daysOfWeek.length,
+        "Dias da semana duplicados.");
+
+export const archiveSchema = z.object({ archived: z.boolean().default(true) }).strict();
+export const checkInCreateSchema = z.object({ date: dateKey.optional() }).strict();
+export const periodQuerySchema = z.object({
+    period: z.enum(["week", "month"]).optional(),
+    from: dateKey.optional(),
+    to: dateKey.optional(),
+}).strict().refine((value) => (value.from && value.to) || (!value.from && !value.to),
+    "Informe from e to juntos.");
+
+export const aiAnalyzeSchema = z.object({
+    period: z.enum(["week", "month"]).default("month"),
+}).strict();
+
+const repetitionTarget = z.string().trim().min(1).max(9)
+    .regex(/^\d{1,4}(?:\s*-\s*\d{1,4})?$/, "Informe uma quantidade ou faixa de repetições.")
+    .refine((value) => {
+        const [minimum, maximum = minimum] = value.split("-").map((part) => Number(part.trim()));
+        return minimum >= 1 && maximum <= 1_000 && minimum <= maximum;
+    }, "A faixa de repetições deve estar entre 1 e 1.000 e em ordem crescente.");
+
+const workoutExerciseSchema = z.object({
+    id: z.string().uuid().optional(),
+    name: z.string().trim().min(1).max(100),
+    plannedSets: z.number().int().min(1).max(30).default(3),
+    repTarget: repetitionTarget.default("8-12"),
+    restSeconds: z.number().int().min(0).max(900).default(90),
+}).strict();
+
+export const workoutPlanSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    exercises: z.array(workoutExerciseSchema).max(50).default([]),
+}).strict().superRefine((value, context) => {
+    const ids = value.exercises.flatMap((exercise) => exercise.id ? [exercise.id] : []);
+    if (new Set(ids).size !== ids.length) {
+        context.addIssue({ code: "custom", path: ["exercises"], message: "Os exercícios não podem ter identificadores duplicados." });
+    }
+});
+
+export const workoutStartSchema = z.object({
+    planId: objectId.optional(),
+}).strict();
+
+export const workoutSessionExerciseSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    plannedSets: z.number().int().min(1).max(30).default(3),
+    repTarget: repetitionTarget.default("8-12"),
+    restSeconds: z.number().int().min(0).max(900).default(90),
+}).strict();
+
+export const workoutSetSchema = z.object({
+    weight: z.number().finite().min(0).max(100_000),
+    reps: z.number().int().min(1).max(1_000),
+    completed: z.boolean().default(false),
+}).strict();
+
+export function parse(schema, value) {
+    const result = schema.safeParse(value);
+    if (!result.success) {
+        throw new HttpError(400, "VALIDATION_ERROR", "Os dados enviados são inválidos.",
+            result.error.issues.map(({ path, message }) => ({ path, message })));
+    }
+    return result.data;
+}
+
+export function parseObjectId(value) {
+    const result = objectId.safeParse(value);
+    if (!result.success) throw new HttpError(400, "VALIDATION_ERROR", "Identificador inválido.");
+    return result.data;
+}
+
+export function parsePagination(query, { defaultLimit = 20, maxLimit = 100 } = {}) {
+    const page = query.page === undefined ? 1 : Number(query.page);
+    const limit = query.limit === undefined ? defaultLimit : Number(query.limit);
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > maxLimit) {
+        throw new HttpError(400, "VALIDATION_ERROR", "Paginação inválida.");
+    }
+    return { page, limit };
+}

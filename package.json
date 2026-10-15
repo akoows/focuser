@@ -1,37 +1,54 @@
 {
-  "name": "focuser-api",
-  "version": "1.0.0",
-  "private": true,
-  "description": "API REST do Focuser V1 (hábitos, metas, sessões de foco, progresso e análise por IA)",
-  "main": "src/server.js",
-  "engines": {
-    "node": ">=22"
-  },
+  "name": "focuser",
+  "version": "0.0.1",
+  "description": "Focuser API created with NodeJS + Express",
+  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "prisma:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
-    "test:unit": "node --test \"tests/unit/*.test.js\"",
-    "test:integration": "node --test --test-concurrency=1 \"tests/integration/*.test.js\"",
-    "audit": "npm audit --omit=dev",
-    "panel": "node serve-panel.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "db:generate": "prisma generate",
+    "test:api": "node --test"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akoows/focuser.git"
+  },
+  "keywords": [
+    "express",
+    "nodejs",
+    "prisma",
+    "api"
+  ],
+  "author": "akoows",
+  "contributors": [
+    {
+      "name": "Davi-ux-max",
+      "url": "https://github.com/Davi-ux-max"
+    },
+    {
+      "name": "andresouzasilva8311-spec",
+      "url": "https://github.com/andresouzasilva8311-spec"
+    },
+    {
+      "name": "voante10",
+      "url": "https://github.com/voante10"
+    }
+  ],
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/akoows/focuser/issues"
+  },
+  "homepage": "https://github.com/akoows/focuser#readme",
   "dependencies": {
-    "@prisma/client": "^6.16.0",
-    "bcryptjs": "^2.4.3",
+    "@prisma/client": "^6.19.3",
+    "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0",
-    "helmet": "^8.0.0",
-    "jsonwebtoken": "^9.0.2",
-    "zod": "^3.24.1"
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "prisma": "^6.16.0",
-    "supertest": "^7.0.0"
+    "prisma": "^6.19.3"
   }
 }

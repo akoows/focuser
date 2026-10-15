@@ -1,42 +1,108 @@
-'use strict';
-const asyncHandler = require('../utils/asyncHandler');
-const { ok } = require('../utils/response');
-const config = require('../config/env');
-const authService = require('../services/authService');
-const userService = require('../services/userService');
-const cloudinaryService = require('../services/cloudinaryService');
+// Importações dos Services
+import { userCreate } from "../services/User/userCreate.js";
+import { userDelete } from "../services/User/userDelete.js";
+import { userEdit } from "../services/User/userEdit.js";
+import { userList } from "../services/User/userList.js";
+import { userLogin } from "../services/User/userLogin.js";
+import { userPerID } from "../services/User/userPerID.js";
 
-const baseCookie = () => ({ httpOnly: true, secure: config.cookie.secure, sameSite: config.cookie.sameSite, path: '/' });
+// Controllers
+export async function userCreateController(req, res) {
+    try {
+        const user = await userCreate(req.body);
+        return res.status(201).json(user);
+    } catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+}
 
-exports.me = (req, res) => ok(res, { user: authService.publicUser(req.user) });
+export async function userDeleteController(req, res) {
+    try {
+        const user = await userDelete(req.params.id);
+        return res.status(201).json(user);
+    } catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+}
 
-exports.publicProfile = asyncHandler(async (req, res) => {
-  ok(res, { profile: await userService.publicProfile(req.valid.params.username) });
-});
+export async function userEditController(req, res) {
+    try {
+        const { id } = req.params;
+        const data = req.body;
 
-exports.update = asyncHandler(async (req, res) => {
-  const user = await userService.update(req.user.id, req.valid.body);
-  ok(res, { user: authService.publicUser(user) });
-});
+        if (!id) {
+            return res.status(400).json({ error: "ID do usuário é obrigatório!" });
+        }
 
-exports.updateReadingFocus = asyncHandler(async (req, res) => {
-  ok(res, await userService.updateReadingFocus(req.user.id, req.valid.body));
-});
+        if (!data || Object.keys(data).length === 0) {
+            return res.status(400).json({ error: "Nenhum dado para atualizar!" });
+        }
 
-exports.clearReadingFocus = asyncHandler(async (req, res) => {
-  await userService.clearReadingFocus(req.user.id, req.valid.body.sessionId);
-  ok(res, { cleared: true });
-});
+        const updatedUser = await userEdit(id, data);
 
-exports.avatarSignature = (req, res) => ok(res, cloudinaryService.avatarUploadSignature(req.user.id));
-exports.bannerSignature = (req, res) => ok(res, cloudinaryService.bannerUploadSignature(req.user.id));
+        return res.status(200).json(updatedUser);
+    } catch (error) {
+        if (error.message.includes("inexistente")) {
+            return res.status(404).json({ error: error.message });
+        }
 
-exports.startPasswordChange = asyncHandler(async (req, res) => {
-  ok(res, await userService.startPasswordChange(req.user.id, req.valid.body));
-});
+        if (error.message.includes("inválido") || error.message.includes("inválida")) {
+            return res.status(400).json({ error: error.message });
+        }
 
-exports.verifyPasswordChange = asyncHandler(async (req, res) => {
-  const { user, token } = await userService.verifyPasswordChange(req.user.id, req.valid.body);
-  res.cookie(config.cookie.name, token, { ...baseCookie(), maxAge: config.jwt.expiresInDays * 86400000 });
-  ok(res, { user });
-});
+        return res.status(500).json({ error: "Erro interno ao editar usuário." });
+    }
+}
+
+export async function userListController(req, res) {
+    try {
+        const users = await userList();
+        return res.status(200).json(users);
+    } catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+}
+
+export async function userLoginController(req, res) {
+    try {
+        const { email, pass } = req.body;
+
+        if (!email || !pass) {
+            return res.status(400).json({ error: "Email e senha são obrigatórios!" });
+        }
+
+        const user = await userLogin({ email, pass });
+
+        return res.status(200).json(user);
+    } catch (error) {
+        if (error.message.includes("não encontrado")) {
+            return res.status(404).json({ error: error.message });
+        }
+
+        if (error.message.includes("incorreta")) {
+            return res.status(401).json({ error: error.message });
+        }
+
+        return res.status(500).json({ error: "Erro interno ao realizar login.\n\n" + error });
+    }
+}
+
+export async function userPerIDController(req, res) {
+    try {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ error: "ID do usuário é obrigatório!" });
+        }
+
+        const user = await userPerID(id);
+
+        return res.status(200).json(user);
+    } catch (error) {
+        if (error.message.includes("não encontrado")) {
+            return res.status(404).json({ error: error.message });
+        }
+
+        return res.status(500).json({ error: "Erro interno ao buscar usuário." });
+    }
+}

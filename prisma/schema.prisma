@@ -1,206 +1,272 @@
-// Focuser V1 — Prisma + MongoDB
-// Rode `npx prisma db push` para criar coleções e ÍNDICES ÚNICOS (essenciais:
-// User.email e CheckIn[habitId,dateKey] garantem unicidade de forma atômica).
 
-generator client {
-  provider = "prisma-client-js"
-}
+  generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+    output = "../app/generated/prisma"
+  }
 
-datasource db {
-  provider = "mongodb"
-  url      = env("DATABASE_URL")
-}
+  datasource db {
+    provider = "mongodb"
+    url = env("DATABASE_URL")
+  }
 
-enum Frequency {
-  DAILY // todos os dias
-  CUSTOM // somente nos dias de daysOfWeek
-}
+  model User {
+    id           String   @id @default(auto()) @map("_id") @db.ObjectId
+    name         String
+    email        String   @unique
+    passwordHash String?
+    pass         String?
+    avatarUrl    String?  @default("https://res.cloudinary.com/dylkeqcms/image/upload/v1762125098/default_uqhrk3.jpg")
+    username     String?  @unique
+    bio          String?
+    bannerUrl    String?
+    currentBookId String? @db.ObjectId
+    favoriteBookId String? @db.ObjectId
+    timezone     String   @default("America/Sao_Paulo")
+    accentColor  String   @default("#ffffff")
+    tokenVersion Int      @default(0)
+    emailVerifiedAt DateTime?
+    emailVerificationRequired Boolean @default(false)
+    emailVerificationCodeHash String?
+    emailVerificationExpiresAt DateTime?
+    emailVerificationAttempts Int @default(0)
+    loginCodeHash String?
+    loginCodeExpiresAt DateTime?
+    loginCodeAttempts Int @default(0)
+    passwordChangeCodeHash String?
+    passwordChangeCodeExpiresAt DateTime?
+    passwordChangeCodeAttempts Int @default(0)
+    activeFocusSessionId String? @db.ObjectId
+    activeWorkoutSessionId String? @db.ObjectId
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+    sentFriendships     Friendship[] @relation("FriendshipRequester")
+    receivedFriendships Friendship[] @relation("FriendshipAddressee")
+  }
 
-enum FriendshipStatus {
-  PENDING
-  ACCEPTED
-}
+  enum FriendshipStatus {
+    PENDING
+    ACCEPTED
+  }
 
-model User {
-  id                   String         @id @default(auto()) @map("_id") @db.ObjectId
-  name                 String
-  email                String         @unique // sempre armazenado em minúsculas
-  username             String?        @unique
-  bio                  String?
-  avatarUrl            String?
-  bannerUrl            String?
-  currentBookId        String?        @db.ObjectId
-  favoriteBookId       String?        @db.ObjectId
-  readingFocusBookId   String?        @db.ObjectId
-  readingFocusSessionId String?
-  readingFocusUpdatedAt DateTime?
-  passwordHash         String
-  timezone             String         @default("America/Sao_Paulo") // IANA; define o "dia" dos check-ins
-  accentColor          String?        // preferência hexadecimal por usuário
-  tokenVersion         Int            @default(0) // incrementado no logout: invalida JWTs emitidos antes
-  emailVerified        Boolean        @default(false)
-  emailVerificationCodeHash String?
-  emailVerificationExpiresAt DateTime?
-  emailVerificationAttempts Int       @default(0)
-  loginCodeHash        String?
-  loginCodeExpiresAt   DateTime?
-  loginCodeAttempts    Int            @default(0)
-  passwordChangeCodeHash String?
-  passwordChangeCodeExpiresAt DateTime?
-  passwordChangeCodeAttempts Int     @default(0)
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  habits               Habit[]
-  checkIns             CheckIn[]
-  goals                Goal[]
-  focusSessions        FocusSession[]
-  books                ReadingBook[]
-  readingLogs          ReadingLog[]
-  activeFocusSessionId String?        @db.ObjectId
-  sentFriendships      Friendship[]   @relation("FriendshipRequester")
-  receivedFriendships  Friendship[]   @relation("FriendshipAddressee")
-}
+  model Friendship {
+    id          String           @id @default(auto()) @map("_id") @db.ObjectId
+    pairKey     String           @unique
+    requesterId String           @db.ObjectId
+    addresseeId String           @db.ObjectId
+    requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+    addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+    status      FriendshipStatus @default(PENDING)
+    createdAt   DateTime         @default(now())
+    updatedAt   DateTime         @updatedAt
 
-model Friendship {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  pairKey     String   @unique
-  requesterId String   @db.ObjectId
-  addresseeId String   @db.ObjectId
-  requester   User     @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  addressee   User     @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
-  status      FriendshipStatus @default(PENDING)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+    @@unique([requesterId, addresseeId])
+    @@index([addresseeId, status, createdAt])
+    @@index([requesterId, status, createdAt])
+  }
 
-  @@unique([requesterId, addresseeId])
-  @@index([addresseeId, status, createdAt])
-  @@index([requesterId, status, createdAt])
-}
+  model PendingProfileUpload {
+    id        String   @id @default(auto()) @map("_id") @db.ObjectId
+    folder    String
+    expiresAt DateTime
+    usedAt    DateTime?
+    createdAt DateTime @default(now())
 
-model PendingProfileUpload {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  folder    String
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
+    @@index([expiresAt])
+  }
 
-  @@index([expiresAt])
-}
+  enum Frequency {
+    DAILY
+    CUSTOM
+  }
 
-model Habit {
-  id           String    @id @default(auto()) @map("_id") @db.ObjectId
-  userId       String    @db.ObjectId
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name         String
-  description  String?
-  category     String?
-  frequency    Frequency @default(DAILY)
-  daysOfWeek   Int[] // 0=domingo ... 6=sábado (DAILY armazena [0..6])
-  isActive     Boolean   @default(true) // false = arquivado
-  startDateKey String // "YYYY-MM-DD" no fuso do usuário; dias anteriores nunca contam como falha
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  checkIns     CheckIn[]
+  model Habit {
+    id           String    @id @default(auto()) @map("_id") @db.ObjectId
+    userId       String    @db.ObjectId
+    name         String
+    description  String?
+    category     String?
+    frequency    Frequency @default(DAILY)
+    daysOfWeek   Int[]
+    isActive     Boolean   @default(true)
+    startDateKey String
+    createdAt    DateTime  @default(now())
+    updatedAt    DateTime  @updatedAt
 
-  @@index([userId, isActive])
-}
+    @@index([userId, isActive])
+  }
 
-model CheckIn {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  habitId     String   @db.ObjectId
-  habit       Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
-  completedAt DateTime // instante em que o registro foi feito
-  dateKey     String // "YYYY-MM-DD" do dia concluído, no fuso do usuário
-  createdAt   DateTime @default(now())
+  model CheckIn {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    habitId     String   @db.ObjectId
+    completedAt DateTime
+    dateKey     String
+    createdAt   DateTime @default(now())
 
-  @@unique([habitId, dateKey]) // impede duplicatas (1 conclusão por hábito/dia)
-  @@index([userId, dateKey])
-}
+    @@unique([habitId, dateKey])
+    @@index([userId, dateKey])
+  }
 
-enum GoalPeriod {
-  DAILY
-  WEEKLY
-  MONTHLY
-  CUSTOM
-}
+  enum GoalPeriod {
+    DAILY
+    WEEKLY
+    MONTHLY
+    CUSTOM
+  }
 
-enum FocusSessionStatus {
-  RUNNING
-  PAUSED
-  COMPLETED
-  CANCELLED
-}
+  model Goal {
+    id           String     @id @default(auto()) @map("_id") @db.ObjectId
+    userId       String     @db.ObjectId
+    name         String
+    description  String?
+    category     String?
+    targetValue  Float
+    currentValue Float      @default(0)
+    unit         String
+    period       GoalPeriod @default(MONTHLY)
+    isActive     Boolean    @default(true)
+    createdAt    DateTime   @default(now())
+    updatedAt    DateTime   @updatedAt
 
-model Goal {
-  id            String         @id @default(auto()) @map("_id") @db.ObjectId
-  userId        String         @db.ObjectId
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name          String
-  description   String?
-  category      String?
-  targetValue   Float
-  currentValue  Float          @default(0)
-  unit          String
-  period        GoalPeriod     @default(MONTHLY)
-  isActive      Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  focusSessions FocusSession[]
+    @@index([userId, isActive])
+  }
 
-  @@index([userId, isActive])
-}
+  enum FocusSessionStatus {
+    RUNNING
+    PAUSED
+    COMPLETED
+    CANCELLED
+  }
 
-model FocusSession {
-  id               String             @id @default(auto()) @map("_id") @db.ObjectId
-  userId           String             @db.ObjectId
-  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goalId           String?            @db.ObjectId
-  goal             Goal?              @relation(fields: [goalId], references: [id], onDelete: SetNull)
-  title            String
-  plannedMinutes   Int
-  status           FocusSessionStatus @default(RUNNING)
-  elapsedSeconds   Int                @default(0)
-  startedAt        DateTime           @default(now())
-  segmentStartedAt DateTime?
-  endedAt          DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  model FocusSession {
+    id             String             @id @default(auto()) @map("_id") @db.ObjectId
+    userId         String             @db.ObjectId
+    goalId         String?            @db.ObjectId
+    title          String
+    plannedMinutes Int
+    elapsedSeconds Int                @default(0)
+    status         FocusSessionStatus @default(RUNNING)
+    resumedAt      DateTime?
+    completedAt    DateTime?
+    cancelledAt    DateTime?
+    createdAt      DateTime           @default(now())
+    updatedAt      DateTime           @updatedAt
 
-  @@index([userId, status, createdAt])
-}
+    @@index([userId, status, createdAt])
+    @@index([userId, goalId])
+  }
 
-model ReadingBook {
-  id          String       @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String       @db.ObjectId
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  author      String?
-  isbn        String?
-  coverId     Int?
-  coverUrl    String?
-  totalPages  Int
-  currentPage Int          @default(0)
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  logs        ReadingLog[]
+  enum AuthChallengePurpose {
+    EMAIL_VERIFICATION
+    LOGIN
+  }
 
-  @@index([userId, isActive])
-}
+  model AuthChallenge {
+    id           String               @id @default(auto()) @map("_id") @db.ObjectId
+    userId       String               @db.ObjectId
+    purpose      AuthChallengePurpose
+    codeHash     String
+    expiresAt    DateTime
+    consumedAt   DateTime?
+    attemptCount Int                  @default(0)
+    createdAt    DateTime             @default(now())
 
-model ReadingLog {
-  id          String      @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String      @db.ObjectId
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bookId      String      @db.ObjectId
-  book        ReadingBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  pagesRead   Int
-  minutesRead Int
-  dateKey     String
-  loggedAt    DateTime    @default(now())
+    @@index([userId, purpose, createdAt])
+    @@index([expiresAt])
+  }
 
-  @@index([userId, dateKey])
-  @@index([bookId, dateKey])
-}
+  model ReadingBook {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    title       String
+    author      String?
+    isbn        String?
+    coverId     Int?
+    coverUrl    String?
+    totalPages  Int
+    currentPage Int      @default(0)
+    isActive    Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    @@index([userId, isActive, createdAt])
+  }
+
+  model ReadingLog {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    bookId      String   @db.ObjectId
+    pagesRead   Int
+    minutesRead Int
+    dateKey     String
+    createdAt   DateTime @default(now())
+
+    @@index([userId, dateKey])
+    @@index([userId, bookId, createdAt])
+  }
+
+  type WorkoutPlanExercise {
+    id           String
+    name         String
+    order        Int
+    plannedSets  Int
+    repTarget    String
+    restSeconds  Int
+  }
+
+  type WorkoutSet {
+    id          String
+    setNumber   Int
+    weight      Float?
+    reps        Int?
+    completed   Boolean  @default(false)
+    completedAt DateTime?
+  }
+
+  type WorkoutSessionExercise {
+    id           String
+    planExerciseId String?
+    name         String
+    order        Int
+    plannedSets  Int
+    repTarget    String
+    restSeconds  Int
+    sets         WorkoutSet[]
+  }
+
+  enum WorkoutSessionStatus {
+    IN_PROGRESS
+    COMPLETED
+    ABANDONED
+  }
+
+  model WorkoutPlan {
+    id        String                 @id @default(auto()) @map("_id") @db.ObjectId
+    userId    String                 @db.ObjectId
+    name      String
+    exercises WorkoutPlanExercise[]
+    createdAt DateTime               @default(now())
+    updatedAt DateTime               @updatedAt
+
+    @@index([userId, updatedAt])
+  }
+
+  model WorkoutSession {
+    id          String                   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String                   @db.ObjectId
+    planId      String?                  @db.ObjectId
+    planName    String?
+    status      WorkoutSessionStatus     @default(IN_PROGRESS)
+    revision    Int                      @default(0)
+    startedAt   DateTime                 @default(now())
+    completedAt DateTime?
+    abandonedAt DateTime?
+    exercises   WorkoutSessionExercise[]
+    createdAt   DateTime                 @default(now())
+    updatedAt   DateTime                 @updatedAt
+
+    @@index([userId, status, startedAt])
+    @@index([userId, completedAt])
+    @@index([userId, planId])
+  }
