@@ -1,11 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   Activity,
+  ArrowUpRight,
   BarChart3,
   BookOpen,
   Check,
   CheckCheck,
+  ChevronDown,
   Clock3,
+  Dumbbell,
   Expand,
   Flame,
   Focus,
@@ -19,7 +24,6 @@ import {
   Plus,
   Play,
   Search,
-  Settings,
   Shrink,
   ShieldCheck,
   Target,
@@ -31,8 +35,9 @@ import {
   Waves,
   X,
 } from 'lucide-react';
-import { HashRouter, Navigate, NavLink, Route, Routes, Link, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Navigate, NavLink, Route, Routes, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { focuserApi } from './services/focuserApi';
+import AcademyPage from './pages/AcademyPage.jsx';
 import focuserLogo from './assets/logo-wordmark.png';
 import './App.css';
 
@@ -45,6 +50,181 @@ const ACCENT_COLORS = [
   { value: '#f9a8d4', label: 'Rosa' },
   { value: '#fcd34d', label: 'Âmbar' },
 ];
+
+function ProfileImageCropper({ source, type, onCancel, onApply }) {
+  const frameRef = useRef(null);
+  const imageRef = useRef(null);
+  const cancelButtonRef = useRef(null);
+  const dragRef = useRef(null);
+  const [imageSize, setImageSize] = useState(null);
+  const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isApplying, setIsApplying] = useState(false);
+  const [error, setError] = useState('');
+  const isBanner = type === 'banner';
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      setFrameSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    cancelButtonRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !isApplying) onCancel();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isApplying, onCancel]);
+
+  const scale = imageSize && frameSize.width && frameSize.height
+    ? Math.max(frameSize.width / imageSize.width, frameSize.height / imageSize.height) * zoom
+    : 1;
+  const displayedWidth = (imageSize?.width || 0) * scale;
+  const displayedHeight = (imageSize?.height || 0) * scale;
+
+  const clampPan = (nextPan, nextZoom = zoom) => {
+    if (!imageSize || !frameSize.width || !frameSize.height) return nextPan;
+    const nextScale = Math.max(frameSize.width / imageSize.width, frameSize.height / imageSize.height) * nextZoom;
+    return {
+      x: Math.max((frameSize.width - imageSize.width * nextScale) / 2, Math.min((imageSize.width * nextScale - frameSize.width) / 2, nextPan.x)),
+      y: Math.max((frameSize.height - imageSize.height * nextScale) / 2, Math.min((imageSize.height * nextScale - frameSize.height) / 2, nextPan.y)),
+    };
+  };
+
+  const changeZoom = (value) => {
+    const nextZoom = Number(value);
+    setZoom(nextZoom);
+    setPan((current) => clampPan(current, nextZoom));
+  };
+
+  const startDrag = (event) => {
+    if (!imageSize || isApplying) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, pan };
+  };
+
+  const moveDrag = (event) => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    const drag = dragRef.current;
+    setPan(clampPan({
+      x: drag.pan.x + event.clientX - drag.x,
+      y: drag.pan.y + event.clientY - drag.y,
+    }));
+  };
+
+  const finishDrag = (event) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const applyCrop = async () => {
+    if (!imageRef.current || !imageSize || !frameSize.width || !frameSize.height) return;
+    setIsApplying(true);
+    setError('');
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = isBanner ? 1400 : 512;
+      canvas.height = isBanner ? 400 : 512;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Não foi possível preparar o recorte da imagem.');
+      const cropWidth = Math.min(frameSize.width, frameSize.height * (isBanner ? 3.5 : 1));
+      const cropHeight = cropWidth / (isBanner ? 3.5 : 1);
+      const frameX = (frameSize.width - cropWidth) / 2;
+      const frameY = (frameSize.height - cropHeight) / 2;
+      const imageX = (frameSize.width - displayedWidth) / 2 + pan.x;
+      const imageY = (frameSize.height - displayedHeight) / 2 + pan.y;
+      context.drawImage(
+        imageRef.current,
+        (frameX - imageX) / scale,
+        (frameY - imageY) / scale,
+        cropWidth / scale,
+        cropHeight / scale,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+      const croppedImage = await new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Não foi possível gerar o recorte da imagem.'));
+        }, 'image/webp', 0.92);
+      });
+      await onApply(croppedImage);
+      onCancel();
+    } catch (cropError) {
+      setError(cropError.message || 'Não foi possível enviar a imagem.');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  const closeOnBackdrop = (event) => {
+    if (event.target === event.currentTarget && !isApplying) onCancel();
+  };
+
+  return (
+    <div className="profile-crop-backdrop" onMouseDown={closeOnBackdrop}>
+      <section className="profile-crop-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-crop-title">
+        <div className="profile-crop-heading">
+          <div>
+            <h2 id="profile-crop-title">{isBanner ? 'Ajustar banner' : 'Ajustar foto de perfil'}</h2>
+            <p className="muted-state">Arraste a imagem para escolher o enquadramento.</p>
+          </div>
+          <button ref={cancelButtonRef} type="button" className="icon-button" aria-label="Fechar editor de recorte" disabled={isApplying} onClick={onCancel}><X size={19} /></button>
+        </div>
+        <div
+          ref={frameRef}
+          className={`profile-crop-frame ${isBanner ? 'banner' : 'avatar'}`}
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        >
+          {source ? (
+            <img
+              ref={imageRef}
+              src={source}
+              alt="Imagem para recortar"
+              draggable="false"
+              onLoad={(event) => {
+                setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
+                setPan({ x: 0, y: 0 });
+              }}
+              style={{
+                width: displayedWidth,
+                height: displayedHeight,
+                left: (frameSize.width - displayedWidth) / 2 + pan.x,
+                top: (frameSize.height - displayedHeight) / 2 + pan.y,
+              }}
+            />
+          ) : null}
+          {!imageSize ? <span className="profile-crop-loading">Carregando imagem…</span> : null}
+        </div>
+        <label className="profile-crop-zoom">
+          <span>Zoom</span>
+          <input type="range" min="1" max="3" step="0.01" value={zoom} onChange={(event) => changeZoom(event.target.value)} disabled={!imageSize || isApplying} />
+          <span>{zoom.toFixed(1)}×</span>
+        </label>
+        <p className="muted-state profile-crop-hint">Use o controle de zoom e arraste a imagem para mover o recorte.</p>
+        {error ? <p className="error-text" role="alert">{error}</p> : null}
+        <div className="profile-crop-actions">
+          <button type="button" className="button button-secondary" disabled={isApplying} onClick={onCancel}>Cancelar</button>
+          <button type="button" className="button button-primary" disabled={!imageSize || isApplying} onClick={applyCrop}>{isApplying ? 'Enviando…' : 'Usar recorte'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -82,12 +262,23 @@ function AuthProvider({ children }) {
   };
 
   const login = async (credentials) => {
-    const { user: authenticatedUser } = await focuserApi.login(credentials);
-    setUser(authenticatedUser);
-    setAccentColor(/^#[\da-f]{6}$/i.test(authenticatedUser.accentColor || '') ? authenticatedUser.accentColor : '#ffffff');
-    setHasCheckedSession(true);
-    setSessionError('');
-    return authenticatedUser;
+    const result = credentials.code
+      ? await focuserApi.verifyLogin(credentials)
+      : await focuserApi.login(credentials);
+    if (result.user) {
+      setUser(result.user);
+      setAccentColor(/^#[\da-f]{6}$/i.test(result.user.accentColor || '') ? result.user.accentColor : '#ffffff');
+      setHasCheckedSession(true);
+      setSessionError('');
+      if (isTauri()) {
+        try {
+          await getCurrentWindow().maximize();
+        } catch (error) {
+          console.error('Não foi possível maximizar a janela:', error);
+        }
+      }
+    }
+    return result;
   };
 
   const logout = async () => {
@@ -168,6 +359,12 @@ function Logo() {
 
 function PublicNavbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user, hasCheckedSession, isCheckingSession, ensureSession } = useAuth();
+
+  useEffect(() => {
+    if (!user && !hasCheckedSession && !isCheckingSession) ensureSession();
+  }, [user, hasCheckedSession, isCheckingSession, ensureSession]);
+
   return (
     <header className="public-header">
       <div className={`container nav-shell ${menuOpen ? 'menu-open' : ''}`}>
@@ -186,11 +383,15 @@ function PublicNavbar() {
         </button>
         <nav id="public-navigation" className="public-nav" aria-label="Navegação pública">
           <Link to="/recursos">Recursos</Link>
-          <Link to="/login">Login</Link>
+          <Link to="/pessoas">Encontrar perfis</Link>
+          {user ? <Link to="/app">Meu espaço</Link> : hasCheckedSession ? <Link to="/login">Login</Link> : null}
         </nav>
         <div className="nav-actions">
-          <Link to="/login" className="button button-secondary">Entrar</Link>
-          <Link to="/cadastro" className="button button-primary">Começar</Link>
+          {user
+            ? <Link to="/app" className="button button-primary">Meu espaço</Link>
+            : hasCheckedSession
+              ? <><Link to="/login" className="button button-secondary">Entrar</Link><Link to="/cadastro" className="button button-primary">Começar</Link></>
+              : <span className="public-session-status" role="status">Verificando sessão…</span>}
         </div>
       </div>
     </header>
@@ -206,8 +407,10 @@ function AppSidebar() {
     { label: 'Hábitos', icon: CheckCheck, to: '/app/habitos' },
     { label: 'Metas', icon: Target, to: '/app/metas' },
     { label: 'Leituras', icon: BookOpen, to: '/app/leituras' },
+    { label: 'Academia', icon: Dumbbell, to: '/app/academia' },
     { label: 'Análises', icon: BarChart3, to: '/app/analises' },
-    { label: 'Configurações', icon: Settings, to: '/app/configuracoes' },
+    { label: 'Perfil', icon: User, to: '/app/perfil' },
+    { label: 'Encontrar perfis', icon: Search, to: '/pessoas' },
   ];
 
   return (
@@ -224,13 +427,28 @@ function AppSidebar() {
         </nav>
       </div>
       <div className="sidebar-footer">
-        <div className="user-badge">
-          <div className="avatar"><User size={16} /></div>
-          <div>
-            <strong>{user?.name || user?.email}</strong>
-            <small>{user?.email}</small>
+        {user?.username ? (
+          <Link
+            className="user-badge public-profile-card-link"
+            to={`/u/${encodeURIComponent(user.username)}`}
+            aria-label={`Ver perfil público de ${user.name || user.username}`}
+          >
+            <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <User size={16} />}</div>
+            <div className="public-profile-card-copy">
+              <strong>{user?.name || user?.email}</strong>
+              <small>@{user.username}</small>
+              <span>Ver perfil público <ArrowUpRight size={14} /></span>
+            </div>
+          </Link>
+        ) : (
+          <div className="user-badge">
+            <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <User size={16} />}</div>
+            <div>
+              <strong>{user?.name || user?.email}</strong>
+              <small>{user?.email}</small>
+            </div>
           </div>
-        </div>
+        )}
         {logoutError ? <small className="error-text" role="alert">{logoutError}</small> : null}
         <button type="button" className="logout-button" onClick={async () => {
           setLogoutError('');
@@ -260,8 +478,9 @@ function AppLayout({ children }) {
           <NavLink to="/app/habitos" aria-label="Hábitos" title="Hábitos" className="mobile-nav-item"><CheckCheck size={19} strokeWidth={1.8} /><span>Hábitos</span></NavLink>
           <NavLink to="/app/metas" aria-label="Metas" title="Metas" className="mobile-nav-item"><Target size={19} strokeWidth={1.8} /><span>Metas</span></NavLink>
           <NavLink to="/app/leituras" aria-label="Leituras" title="Leituras" className="mobile-nav-item"><BookOpen size={19} strokeWidth={1.8} /><span>Leituras</span></NavLink>
+          <NavLink to="/app/academia" aria-label="Academia" title="Academia" className="mobile-nav-item"><Dumbbell size={19} strokeWidth={1.8} /><span>Academia</span></NavLink>
           <NavLink to="/app/analises" aria-label="Análises" title="Análises" className="mobile-nav-item"><BarChart3 size={19} strokeWidth={1.8} /><span>Análises</span></NavLink>
-          <NavLink to="/app/configuracoes" aria-label="Configurações" title="Configurações" className="mobile-nav-item"><Settings size={19} strokeWidth={1.8} /><span>Config.</span></NavLink>
+          <NavLink to="/app/perfil" aria-label="Perfil" title="Perfil" className="mobile-nav-item"><User size={19} strokeWidth={1.8} /><span>Perfil</span></NavLink>
         </nav>
       </main>
     </div>
@@ -561,6 +780,8 @@ function ResourcesPage() {
 function LoginPage() {
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState('credentials');
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -578,15 +799,36 @@ function LoginPage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
-    const nextErrors = validate();
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (step === 'credentials') {
+      const nextErrors = validate();
+      setErrors(nextErrors);
+      if (Object.keys(nextErrors).length > 0) return;
+    } else if (!/^\d{6}$/.test(code)) {
+      setErrors({ code: 'Informe o código de 6 dígitos enviado por e-mail.' });
+      return;
+    } else {
+      setErrors({});
+    }
     setSubmitError('');
     setStatusMessage('');
     setIsSubmitting(true);
     try {
-      await login({ email: form.email, password: form.password });
-      navigate('/app');
+      if (step === 'email-verification') {
+        await focuserApi.verifyEmail({ email: form.email, code });
+        setStep('credentials');
+        setCode('');
+        setStatusMessage('E-mail verificado. Entre novamente para receber seu código de acesso.');
+      } else {
+        const result = await login(step === 'two-factor' ? { email: form.email, code } : { email: form.email, password: form.password });
+        if (result.user) navigate('/app');
+        else {
+          setStep(result.emailVerificationRequired ? 'email-verification' : 'two-factor');
+          setCode('');
+          setStatusMessage(result.emailVerificationRequired
+            ? 'Enviamos um código para verificar seu e-mail.'
+            : 'Enviamos um código de acesso para seu e-mail.');
+        }
+      }
     } catch (error) {
       setSubmitError(error.message);
     } finally {
@@ -599,25 +841,39 @@ function LoginPage() {
       <div className="auth-card card">
         <Logo />
         <div className="auth-header">
-          <h1>bem-vindo de volta</h1>
-          <p>faça login para continuar</p>
+          <h1>{step === 'credentials' ? 'bem-vindo de volta' : step === 'two-factor' ? 'confirme seu acesso' : 'verifique seu e-mail'}</h1>
+          <p>{step === 'credentials' ? 'faça login para continuar' : `informe o código enviado para ${form.email}`}</p>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
-          <label>
-            <span>E-mail</span>
-            <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
-            {errors.email ? <small className="error-text">{errors.email}</small> : null}
-          </label>
-          <label>
-            <span>Senha</span>
-            <input type="password" autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
-            {errors.password ? <small className="error-text">{errors.password}</small> : null}
-          </label>
+          {step === 'credentials' ? <>
+            <label>
+              <span>E-mail</span>
+              <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
+              {errors.email ? <small className="error-text">{errors.email}</small> : null}
+            </label>
+            <label>
+              <span>Senha</span>
+              <input type="password" autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
+              {errors.password ? <small className="error-text">{errors.password}</small> : null}
+            </label>
+          </> : <label>
+            <span>Código de 6 dígitos</span>
+            <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" aria-invalid={Boolean(errors.code)} />
+            {errors.code ? <small className="error-text">{errors.code}</small> : null}
+          </label>}
           {statusMessage ? <p role="status">{statusMessage}</p> : null}
           {submitError ? <p className="error-text" role="alert">{submitError}</p> : null}
           <button type="submit" className="button button-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Aguarde...' : 'Entrar'}
+            {isSubmitting ? 'Aguarde...' : step === 'credentials' ? 'Entrar' : step === 'two-factor' ? 'Confirmar acesso' : 'Verificar e-mail'}
           </button>
+          {step === 'email-verification' ? <button type="button" className="button button-secondary" disabled={isSubmitting} onClick={async () => {
+            setSubmitError('');
+            setIsSubmitting(true);
+            try { await focuserApi.resendEmailVerification({ email: form.email }); setStatusMessage('Se a conta precisar de verificação, um novo código foi enviado.'); }
+            catch (error) { setSubmitError(error.message); }
+            finally { setIsSubmitting(false); }
+          }}>Reenviar código</button> : null}
+          {step !== 'credentials' ? <button type="button" className="button button-secondary" disabled={isSubmitting} onClick={() => { setStep('credentials'); setCode(''); setSubmitError(''); setStatusMessage(''); }}>Voltar</button> : null}
         </form>
         <p className="switch-link">Ainda não tem conta? <Link to="/cadastro">crie agora</Link></p>
       </div>
@@ -625,39 +881,132 @@ function LoginPage() {
   );
 }
 
+async function uploadCloudinaryImage(signature, image, filename) {
+  const formData = new FormData();
+  formData.append('file', image, filename);
+  formData.append('api_key', signature.apiKey);
+  formData.append('timestamp', String(signature.timestamp));
+  formData.append('folder', signature.folder);
+  formData.append('signature', signature.signature);
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(signature.cloudName)}/image/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  const result = await response.json();
+  if (!response.ok || typeof result.secure_url !== 'string') {
+    throw new Error(result.error?.message || 'Não foi possível enviar a imagem ao Cloudinary.');
+  }
+  return result.secure_url;
+}
+
 function SignupPage() {
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState({ name: '', username: '', email: '', password: '', confirmPassword: '' });
+  const [avatarImage, setAvatarImage] = useState(null);
+  const [bannerImage, setBannerImage] = useState(null);
+  const [cropRequest, setCropRequest] = useState(null);
+  const [code, setCode] = useState('');
+  const [verificationPending, setVerificationPending] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => () => {
+    if (cropRequest?.source) URL.revokeObjectURL(cropRequest.source);
+  }, [cropRequest]);
+  useEffect(() => () => {
+    if (avatarImage?.preview) URL.revokeObjectURL(avatarImage.preview);
+  }, [avatarImage]);
+  useEffect(() => () => {
+    if (bannerImage?.preview) URL.revokeObjectURL(bannerImage.preview);
+  }, [bannerImage]);
 
   const validate = () => {
     const nextErrors = {};
     if (form.name.trim().length < 2) nextErrors.name = 'Informe seu nome completo.';
+    if (!/^[a-zA-Z0-9._]{3,30}$/.test(form.username.trim())) nextErrors.username = 'Use de 3 a 30 letras, números, pontos ou sublinhados.';
     if (!form.email.includes('@')) nextErrors.email = 'Informe um e-mail válido.';
     if (form.password.length < 8) nextErrors.password = 'A senha precisa ter pelo menos 8 caracteres.';
     if (form.confirmPassword !== form.password) nextErrors.confirmPassword = 'As senhas não coincidem.';
+    if (!avatarImage?.blob) nextErrors.avatar = 'Escolha e ajuste uma foto de perfil para continuar.';
     return nextErrors;
+  };
+
+  const selectSignupImage = (event, type) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setSubmitError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setErrors((current) => ({ ...current, [type]: 'Escolha uma imagem JPG, PNG ou WebP.' }));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors((current) => ({ ...current, [type]: 'A imagem original deve ter no máximo 5 MB.' }));
+      return;
+    }
+    setErrors((current) => ({ ...current, [type]: '' }));
+    setCropRequest({ source: URL.createObjectURL(file), type });
+  };
+
+  const saveSignupCrop = (blob) => {
+    const selection = { blob, preview: URL.createObjectURL(blob) };
+    if (cropRequest.type === 'banner') setBannerImage(selection);
+    else setAvatarImage(selection);
+    setCropRequest(null);
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
-    const nextErrors = validate();
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (!verificationPending) {
+      const nextErrors = validate();
+      setErrors(nextErrors);
+      if (Object.keys(nextErrors).length > 0) return;
+    } else if (!/^\d{6}$/.test(code)) {
+      setErrors({ code: 'Informe o código de 6 dígitos enviado por e-mail.' });
+      return;
+    } else {
+      setErrors({});
+    }
     setSubmitError('');
+    setStatusMessage('');
     setIsSubmitting(true);
     try {
-      await focuserApi.register({
-        name: form.name.trim(),
-        email: form.email,
-        password: form.password,
-      });
-      navigate('/login', { state: { message: 'Conta criada. Entre com seu e-mail e senha.' } });
+      if (verificationPending) {
+        await focuserApi.verifyEmail({ email: form.email, code });
+        navigate('/login', { state: { message: 'E-mail verificado. Agora entre para concluir a autenticação em duas etapas.' } });
+      } else {
+        const avatarSignature = await focuserApi.registrationImageSignature('avatar');
+        const avatarUrl = await uploadCloudinaryImage(avatarSignature, avatarImage.blob, 'profile-avatar.webp');
+        let bannerUpload;
+        if (bannerImage?.blob) {
+          const bannerSignature = await focuserApi.registrationImageSignature('banner');
+          bannerUpload = {
+            uploadId: bannerSignature.uploadId,
+            url: await uploadCloudinaryImage(bannerSignature, bannerImage.blob, 'profile-banner.webp'),
+          };
+        }
+        const result = await focuserApi.register({
+          name: form.name.trim(),
+          username: form.username.trim().toLowerCase(),
+          email: form.email,
+          password: form.password,
+          avatarUploadId: avatarSignature.uploadId,
+          avatarUrl,
+          ...(bannerUpload ? { bannerUploadId: bannerUpload.uploadId, bannerUrl: bannerUpload.url } : {}),
+        });
+        if (result.emailVerificationRequired === false) {
+          navigate('/login', { state: { message: 'Conta criada. Entre para continuar.' } });
+        } else {
+          setVerificationPending(true);
+          setStatusMessage('Enviamos um código para seu e-mail. O código expira em 10 minutos.');
+        }
+      }
     } catch (error) {
       setSubmitError(error.message);
+      if (error.code === 'EMAIL_DELIVERY_FAILED') setVerificationPending(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -668,34 +1017,234 @@ function SignupPage() {
       <div className="auth-card card">
         <Logo />
         <div className="auth-header">
-          <h1>crie sua conta</h1>
+          <h1>{verificationPending ? 'verifique seu e-mail' : 'crie sua conta'}</h1>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
-          <label>
-            <span>Nome</span>
-            <input type="text" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Seu nome" aria-invalid={Boolean(errors.name)} />
-            {errors.name ? <small className="error-text">{errors.name}</small> : null}
-          </label>
-          <label>
-            <span>E-mail</span>
-            <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
-            {errors.email ? <small className="error-text">{errors.email}</small> : null}
-          </label>
-          <label>
-            <span>Senha</span>
-            <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
-            {errors.password ? <small className="error-text">{errors.password}</small> : <small>Mínimo de 8 caracteres; até 72 bytes.</small>}
-          </label>
-          <label>
-            <span>Confirmação de senha</span>
-            <input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder="Repita a senha" aria-invalid={Boolean(errors.confirmPassword)} />
-            {errors.confirmPassword ? <small className="error-text">{errors.confirmPassword}</small> : null}
-          </label>
+          {verificationPending ? <>
+            <p>Enviamos um código de verificação para <strong>{form.email}</strong>.</p>
+            <label>
+              <span>Código de 6 dígitos</span>
+              <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" aria-invalid={Boolean(errors.code)} />
+              {errors.code ? <small className="error-text">{errors.code}</small> : null}
+            </label>
+          </> : <>
+            <label>
+              <span>Nome</span>
+              <input type="text" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Seu nome" aria-invalid={Boolean(errors.name)} />
+              {errors.name ? <small className="error-text">{errors.name}</small> : null}
+            </label>
+            <label>
+              <span>Nome de usuário</span>
+              <div className="signup-username-input"><span aria-hidden="true">@</span><input type="text" autoComplete="username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.replace(/^@/, '').toLowerCase() })} minLength="3" maxLength="30" pattern="[a-zA-Z0-9._]{3,30}" placeholder="seu.usuario" aria-invalid={Boolean(errors.username)} required /></div>
+              {errors.username ? <small className="error-text">{errors.username}</small> : <small>Seu nome público, único e usado para encontrar seu perfil.</small>}
+            </label>
+            <label>
+              <span>E-mail</span>
+              <input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="seu@email.com" aria-invalid={Boolean(errors.email)} />
+              {errors.email ? <small className="error-text">{errors.email}</small> : null}
+            </label>
+            <label>
+              <span>Senha</span>
+              <input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" aria-invalid={Boolean(errors.password)} />
+              {errors.password ? <small className="error-text">{errors.password}</small> : <small>Mínimo de 8 caracteres; até 72 bytes.</small>}
+            </label>
+            <label>
+              <span>Confirmação de senha</span>
+              <input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder="Repita a senha" aria-invalid={Boolean(errors.confirmPassword)} />
+              {errors.confirmPassword ? <small className="error-text">{errors.confirmPassword}</small> : null}
+            </label>
+            <div className="signup-image-pickers">
+              <div className="signup-image-picker">
+                <div className="signup-avatar-preview">{avatarImage?.preview ? <img src={avatarImage.preview} alt="Prévia da foto de perfil" /> : <User size={26} />}</div>
+                <div>
+                  <strong>Foto de perfil <span aria-hidden="true">*</span></strong>
+                  <small>Obrigatória · JPG, PNG ou WebP · máx. 5 MB</small>
+                  <label className="button button-secondary signup-image-button">
+                    {avatarImage?.preview ? 'Trocar foto' : 'Escolher foto'}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => selectSignupImage(event, 'avatar')} disabled={isSubmitting} />
+                  </label>
+                </div>
+              </div>
+              {errors.avatar ? <small className="error-text" role="alert">{errors.avatar}</small> : null}
+              <div className="signup-image-picker banner">
+                <div className="signup-banner-preview">{bannerImage?.preview ? <img src={bannerImage.preview} alt="Prévia do banner" /> : <span>Banner opcional</span>}</div>
+                <div>
+                  <strong>Banner <small>(opcional)</small></strong>
+                  <small>JPG, PNG ou WebP · máx. 5 MB</small>
+                  <label className="button button-secondary signup-image-button">
+                    {bannerImage?.preview ? 'Trocar banner' : 'Escolher banner'}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => selectSignupImage(event, 'banner')} disabled={isSubmitting} />
+                  </label>
+                </div>
+                {errors.banner ? <small className="error-text">{errors.banner}</small> : null}
+              </div>
+            </div>
+          </>}
+          {statusMessage ? <p role="status">{statusMessage}</p> : null}
           {submitError ? <p className="error-text" role="alert">{submitError}</p> : null}
-          <button type="submit" className="button button-primary" disabled={isSubmitting}>{isSubmitting ? 'Aguarde…' : 'Criar conta'}</button>
+          <button type="submit" className="button button-primary" disabled={isSubmitting}>{isSubmitting ? 'Aguarde…' : verificationPending ? 'Verificar e-mail' : 'Criar conta'}</button>
+          {verificationPending ? <button type="button" className="button button-secondary" disabled={isSubmitting} onClick={async () => {
+            setSubmitError('');
+            setIsSubmitting(true);
+            try { await focuserApi.resendEmailVerification({ email: form.email }); setStatusMessage('Se a conta precisar de verificação, um novo código foi enviado.'); }
+            catch (error) { setSubmitError(error.message); }
+            finally { setIsSubmitting(false); }
+          }}>Reenviar código</button> : null}
         </form>
         <p className="switch-link">Já tem conta? <Link to="/login">faça login</Link></p>
       </div>
+      {cropRequest ? (
+        <ProfileImageCropper
+          source={cropRequest.source}
+          type={cropRequest.type}
+          onCancel={() => setCropRequest(null)}
+          onApply={saveSignupCrop}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PublicProfileFinderPage() {
+  const [username, setUsername] = useState('');
+  const navigate = useNavigate();
+
+  const findProfile = (event) => {
+    event.preventDefault();
+    const normalized = username.trim().replace(/^@/, '').toLowerCase();
+    if (/^[a-z0-9._]{3,30}$/.test(normalized)) navigate(`/u/${encodeURIComponent(normalized)}`);
+  };
+
+  return (
+    <div className="public-page">
+      <PublicNavbar />
+      <main className="container public-finder-main">
+        <section className="card public-finder-card">
+          <p className="eyebrow">comunidade</p>
+          <h1>Encontre um perfil</h1>
+          <p className="muted-state">Busque pelo nome de usuário para ver o perfil público de alguém.</p>
+          <form className="public-profile-search" onSubmit={findProfile}>
+            <label htmlFor="public-profile-username">Nome de usuário</label>
+            <div className="profile-username-input">
+              <span aria-hidden="true">@</span>
+              <input
+                id="public-profile-username"
+                autoComplete="off"
+                maxLength={31}
+                value={username}
+                onChange={(event) => setUsername(event.target.value.replace(/^@/, ''))}
+                placeholder="nome.de.usuario"
+              />
+            </div>
+            <button type="submit" className="button button-primary" disabled={!/^[a-zA-Z0-9._]{3,30}$/.test(username.trim().replace(/^@/, ''))}>Encontrar perfil</button>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function PublicBookCard({ title, book }) {
+  const [hasCover, setHasCover] = useState(Boolean(book.coverUrl || book.coverId));
+  const coverSource = book.coverUrl || (book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-M.jpg` : null);
+  const readingProgress = Number.isInteger(book.currentPage) && Number.isInteger(book.totalPages) && book.totalPages > 0
+    ? Math.min(100, Math.max(0, Math.round((book.currentPage / book.totalPages) * 100)))
+    : null;
+  return (
+    <article className="card public-book-card">
+      <div className="public-book-cover">
+        {coverSource && hasCover
+          ? <img src={coverSource} alt={`Capa de ${book.title}`} loading="lazy" onError={() => setHasCover(false)} />
+          : <BookOpen size={26} aria-hidden="true" />}
+      </div>
+      <div className="public-book-info">
+        <span className="public-book-label">{title}</span>
+        <h2>{book.title}</h2>
+        <p>{book.author || 'Autor não informado'}</p>
+        {readingProgress !== null ? (
+          <div className="public-book-progress">
+            <div className="public-book-progress-label"><small>{book.currentPage} de {book.totalPages} páginas</small><small>{readingProgress}%</small></div>
+            <div className="public-book-progress-track" role="progressbar" aria-label={`Progresso de leitura de ${book.title}`} aria-valuenow={readingProgress} aria-valuemin="0" aria-valuemax="100">
+              <span style={{ width: `${readingProgress}%` }} />
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function PublicProfilePage() {
+  const { username } = useParams();
+  const normalized = (username || '').toLowerCase();
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    focuserApi.publicProfile(normalized)
+      .then(({ profile }) => { if (active) setResult({ username: normalized, profile }); })
+      .catch((error) => { if (active) setResult({ username: normalized, error }); });
+    return () => { active = false; };
+  }, [normalized]);
+
+  const currentResult = result?.username === normalized ? result : null;
+  const profile = currentResult?.profile;
+  const profileAccentColor = /^#[\da-f]{6}$/i.test(profile?.accentColor || '') ? profile.accentColor : '#ffffff';
+
+  return (
+    <div className="public-page" style={{ '--accent': profileAccentColor, '--white': profileAccentColor }}>
+      <PublicNavbar />
+      <main className="container public-profile-main">
+        {!currentResult ? <div className="card state-card" role="status">Carregando perfil…</div> : null}
+        {currentResult?.error ? (
+          <section className="card state-card error-state" role="alert">
+            <p>{currentResult.error.status === 404 ? 'Esse perfil não foi encontrado.' : currentResult.error.message}</p>
+            <Link className="button button-secondary" to="/pessoas">Buscar outro perfil</Link>
+          </section>
+        ) : null}
+        {profile ? <>
+          <div className="public-profile-layout">
+            <section className="public-profile-card card">
+              <div className={`public-profile-banner${profile.bannerUrl ? ' has-image' : ''}`}>
+                {profile.bannerUrl ? <img src={profile.bannerUrl} alt="" /> : <span className="public-profile-banner-glow" aria-hidden="true" />}
+                <span className="public-profile-banner-label">FOCUSER <span aria-hidden="true">/</span> COMUNIDADE</span>
+              </div>
+              <div className="public-profile-identity">
+                <div className="public-profile-avatar">{profile.avatarUrl ? <img src={profile.avatarUrl} alt={`Foto de ${profile.name}`} /> : <User size={30} />}</div>
+                <div className="public-profile-name">
+                  <h1>{profile.name}</h1>
+                  <p><span aria-hidden="true">@</span>{profile.username}</p>
+                </div>
+                <span className="public-profile-badge"><span aria-hidden="true" />Perfil público</span>
+              </div>
+              <section className="public-profile-about" aria-labelledby="public-profile-about-title">
+                <h2 id="public-profile-about-title">Sobre</h2>
+                {profile.bio
+                  ? <p className="public-profile-bio">{profile.bio}</p>
+                  : <p className="muted-state public-profile-bio">Este perfil ainda não tem uma bio.</p>}
+              </section>
+            </section>
+            <section className="public-profile-reading" aria-labelledby="public-profile-reading-title">
+              <div className="public-profile-section-heading">
+                <div>
+                  <p className="eyebrow">leituras</p>
+                  <h2 id="public-profile-reading-title">Livros compartilhados</h2>
+                </div>
+                <BookOpen size={22} aria-hidden="true" />
+              </div>
+              {profile.currentBook || profile.favoriteBook ? (
+                <div className="public-profile-books">
+                  {profile.currentBook ? <PublicBookCard title="Em leitura" book={profile.currentBook} /> : null}
+                  {profile.favoriteBook ? <PublicBookCard title="Livro favorito" book={profile.favoriteBook} /> : null}
+                </div>
+              ) : (
+                <p className="card public-profile-empty muted-state">Este perfil ainda não compartilhou livros.</p>
+              )}
+            </section>
+            <Link className="public-profile-back" to="/pessoas">Encontrar outro perfil</Link>
+          </div>
+        </> : null}
+      </main>
     </div>
   );
 }
@@ -963,6 +1512,76 @@ function ReadingBookCover({ book }) {
       loading="lazy"
       onError={() => setHasCover(false)}
     />
+  );
+}
+
+function ProfileBookPicker({ id, title, description, books, value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedBook = books.find((book) => book.id === value);
+
+  return (
+    <section className="profile-book-picker" aria-labelledby={`${id}-label`}>
+      <div className="profile-book-picker-heading">
+        <div>
+          <h4 id={`${id}-label`}>{title}</h4>
+          <p className="muted-state">{description}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        className={`profile-book-trigger${selectedBook ? ' has-selection' : ''}`}
+        aria-expanded={isOpen}
+        aria-controls={`${id}-options`}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        {selectedBook ? (
+          <>
+            <ReadingBookCover key={`${selectedBook.id}-${selectedBook.coverId || selectedBook.isbn || 'none'}`} book={selectedBook} />
+            <span className="profile-book-trigger-info">
+              <strong>{selectedBook.title}</strong>
+              <small>{selectedBook.author || 'Autor não informado'}</small>
+            </span>
+          </>
+        ) : (
+          <span className="profile-book-trigger-empty"><BookOpen size={20} /> Escolha um livro da sua biblioteca</span>
+        )}
+        <span className="profile-book-trigger-action">{selectedBook ? 'Trocar' : 'Escolher'} <ChevronDown size={16} /></span>
+      </button>
+      {isOpen ? (
+        <div className="profile-book-options" id={`${id}-options`} role="listbox" aria-labelledby={`${id}-label`}>
+          <button
+            type="button"
+            className={`profile-book-option profile-book-none${!value ? ' selected' : ''}`}
+            role="option"
+            aria-selected={!value}
+            onClick={() => { onChange(''); setIsOpen(false); }}
+          >
+            <span className="profile-book-option-placeholder"><BookOpen size={20} /></span>
+            <span><strong>Nenhum livro</strong><small>Não exibir um livro nesta seção</small></span>
+            {!value ? <Check size={17} aria-hidden="true" /> : null}
+          </button>
+          {books.map((book) => (
+            <button
+              type="button"
+              className={`profile-book-option${value === book.id ? ' selected' : ''}`}
+              key={book.id}
+              role="option"
+              aria-selected={value === book.id}
+              onClick={() => { onChange(book.id); setIsOpen(false); }}
+            >
+              <ReadingBookCover key={`${book.id}-${book.coverId || book.isbn || 'none'}`} book={book} />
+              <span className="profile-book-option-info">
+                <strong>{book.title}</strong>
+                <small>{book.author || 'Autor não informado'}</small>
+                {!book.isActive ? <small className="profile-book-archived">Arquivado</small> : null}
+              </span>
+              {value === book.id ? <Check size={17} aria-hidden="true" /> : null}
+            </button>
+          ))}
+          {books.length === 0 ? <p className="profile-book-options-empty muted-state">Nenhum livro disponível.</p> : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1812,6 +2431,9 @@ function AnalyticsPage() {
   const [history, setHistory] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisError, setAnalysisError] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1830,17 +2452,38 @@ function AnalyticsPage() {
     return () => { active = false; };
   }, [period]);
 
+  const analyzeHabits = async () => {
+    if (isAnalyzing) return;
+    setIsAnalyzing(true);
+    setAnalysisError('');
+    setAnalysis(null);
+    try {
+      setAnalysis(await focuserApi.analyzeHabits(period));
+    } catch (requestError) {
+      setAnalysisError(requestError.message);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   return (
     <AppLayout>
       <PageHeader title="Análises" subtitle="seu progresso de hábitos." action={
-        <select className="period-select" value={period} onChange={(event) => {
-          setIsLoading(true);
-          setError('');
-          setPeriod(event.target.value);
-        }} aria-label="Período das análises">
-          <option value="week">Esta semana</option>
-          <option value="month">Este mês</option>
-        </select>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select className="period-select" value={period} onChange={(event) => {
+            setIsLoading(true);
+            setError('');
+            setAnalysis(null);
+            setAnalysisError('');
+            setPeriod(event.target.value);
+          }} aria-label="Período das análises">
+            <option value="week">Esta semana</option>
+            <option value="month">Este mês</option>
+          </select>
+          <button type="button" className="button button-secondary" onClick={analyzeHabits} disabled={isAnalyzing || isLoading}>
+            {isAnalyzing ? 'Analisando…' : 'Análise com IA'}
+          </button>
+        </div>
       } />
       <ApiState loading={isLoading} error={error} empty={metrics && metrics.totals.scheduled === 0 ? 'Ainda não há hábitos programados neste período para calcular estatísticas.' : null}>
         <section className="metrics-grid">
@@ -1859,6 +2502,16 @@ function AnalyticsPage() {
             </div>
           )) : <p className="muted-state">Sem hábitos registrados neste intervalo.</p>}
         </section>
+        {analysisError ? <p className="error-text" role="alert">{analysisError}</p> : null}
+        {analysis ? (
+          <section className="card ai-analysis" aria-live="polite">
+            <h2>Insights para sua rotina</h2>
+            <p>{analysis.summary}</p>
+            {analysis.insights?.length ? <div><h3>O que os dados mostram</h3><ul>{analysis.insights.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div> : null}
+            {analysis.recommendations?.length ? <div><h3>Próximos passos</h3><ul>{analysis.recommendations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div> : null}
+            <p className="muted-state">Análise gerada em {new Date(analysis.generatedAt).toLocaleString('pt-BR')} com base nos hábitos e métricas deste período.</p>
+          </section>
+        ) : null}
       </ApiState>
     </AppLayout>
   );
@@ -1867,12 +2520,46 @@ function AnalyticsPage() {
 function SettingsPage() {
   const { user, setUser, accentColor, updateAccentColor } = useAuth();
   const [name, setName] = useState(user?.name || '');
+  const [username, setUsername] = useState(user?.username || '');
+  const [bio, setBio] = useState(user?.bio || '');
+  const [currentBookId, setCurrentBookId] = useState(user?.currentBookId || '');
+  const [favoriteBookId, setFavoriteBookId] = useState(user?.favoriteBookId || '');
+  const [books, setBooks] = useState([]);
+  const [booksError, setBooksError] = useState('');
   const [timezone, setTimezone] = useState(user?.timezone || 'America/Sao_Paulo');
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [themeError, setThemeError] = useState('');
   const [isSavingTheme, setIsSavingTheme] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [cropRequest, setCropRequest] = useState(null);
+  const [avatarMessage, setAvatarMessage] = useState('');
+  const [avatarError, setAvatarError] = useState('');
+  const [bannerMessage, setBannerMessage] = useState('');
+  const [bannerError, setBannerError] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordCode, setPasswordCode] = useState('');
+  const [passwordCodeSent, setPasswordCodeSent] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  useEffect(() => () => {
+    if (cropRequest?.source) URL.revokeObjectURL(cropRequest.source);
+  }, [cropRequest]);
+
+  const closeCropEditor = useCallback(() => setCropRequest(null), []);
+
+  useEffect(() => {
+    let active = true;
+    focuserApi.reading.listBooks({ status: 'all', limit: '100' })
+      .then((response) => { if (active) setBooks(response.items); })
+      .catch((requestError) => { if (active) setBooksError(requestError.message); });
+    return () => { active = false; };
+  }, []);
 
   const saveProfile = async (event) => {
     event.preventDefault();
@@ -1881,15 +2568,112 @@ function SettingsPage() {
     setMessage('');
     setError('');
     try {
-      const { user: updatedUser } = await focuserApi.updateProfile({ name: name.trim(), timezone: timezone.trim() });
+      const { user: updatedUser } = await focuserApi.updateProfile({
+        name: name.trim(),
+        username: username.trim() || null,
+        bio: bio.trim() || null,
+        currentBookId: currentBookId || null,
+        favoriteBookId: favoriteBookId || null,
+        timezone: timezone.trim(),
+      });
       setUser(updatedUser);
       setName(updatedUser.name);
+      setUsername(updatedUser.username || '');
+      setBio(updatedUser.bio || '');
+      setCurrentBookId(updatedUser.currentBookId || '');
+      setFavoriteBookId(updatedUser.favoriteBookId || '');
       setTimezone(updatedUser.timezone);
       setMessage('Perfil atualizado.');
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const uploadProfileImage = async (event, type) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const setImageMessage = type === 'banner' ? setBannerMessage : setAvatarMessage;
+    const setImageError = type === 'banner' ? setBannerError : setAvatarError;
+    setImageMessage('');
+    setImageError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setImageError('Escolha uma imagem JPG, PNG ou WebP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError('A imagem deve ter no máximo 5 MB.');
+      return;
+    }
+
+    setCropRequest({ source: URL.createObjectURL(file), type });
+  };
+
+  const uploadCroppedProfileImage = async (croppedImage, type) => {
+    const setImageMessage = type === 'banner' ? setBannerMessage : setAvatarMessage;
+    const setImageError = type === 'banner' ? setBannerError : setAvatarError;
+    const setUploading = type === 'banner' ? setIsUploadingBanner : setIsUploadingAvatar;
+    setImageMessage('');
+    setImageError('');
+    setUploading(true);
+    try {
+      const signature = type === 'banner'
+        ? await focuserApi.bannerUploadSignature()
+        : await focuserApi.avatarUploadSignature();
+      const formData = new FormData();
+      formData.append('file', croppedImage, type === 'banner' ? 'profile-banner.webp' : 'profile-avatar.webp');
+      formData.append('api_key', signature.apiKey);
+      formData.append('timestamp', String(signature.timestamp));
+      formData.append('folder', signature.folder);
+      formData.append('signature', signature.signature);
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(signature.cloudName)}/image/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await response.json();
+      if (!response.ok || typeof result.secure_url !== 'string') {
+        throw new Error(result.error?.message || 'Não foi possível enviar a imagem ao Cloudinary.');
+      }
+      const field = type === 'banner' ? 'bannerUrl' : 'avatarUrl';
+      const { user: updatedUser } = await focuserApi.updateProfile({ [field]: result.secure_url });
+      setUser(updatedUser);
+      setImageMessage(type === 'banner' ? 'Banner atualizado.' : 'Foto de perfil atualizada.');
+    } catch (uploadError) {
+      setImageError(uploadError.message);
+      throw uploadError;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const activeBooks = books.filter((book) => book.isActive);
+
+  const submitPasswordChange = async (event) => {
+    event.preventDefault();
+    if (isChangingPassword) return;
+    setPasswordError('');
+    setPasswordMessage('');
+    setIsChangingPassword(true);
+    try {
+      if (!passwordCodeSent) {
+        await focuserApi.startPasswordChange({ currentPassword, newPassword });
+        setPasswordCodeSent(true);
+        setPasswordMessage('Enviamos um código para o e-mail da sua conta.');
+      } else {
+        const { user: updatedUser } = await focuserApi.verifyPasswordChange({ code: passwordCode, newPassword });
+        setUser(updatedUser);
+        setCurrentPassword('');
+        setNewPassword('');
+        setPasswordCode('');
+        setPasswordCodeSent(false);
+        setPasswordMessage('Senha alterada. As outras sessões foram encerradas.');
+      }
+    } catch (changeError) {
+      setPasswordError(changeError.message);
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -1908,15 +2692,81 @@ function SettingsPage() {
 
   return (
     <AppLayout>
-      <PageHeader title="Configurações" subtitle="personalize sua experiência." />
+      <PageHeader title="Perfil" subtitle="gerencie suas informações e segurança." />
       <form className="card profile-settings" onSubmit={saveProfile}>
         <h3>Perfil</h3>
+        <div className="profile-banner-editor">
+          <div className="profile-banner-preview">
+            {user?.bannerUrl ? <img src={user.bannerUrl} alt="Banner do perfil" /> : <span>Seu banner</span>}
+          </div>
+          <div className="profile-avatar-actions">
+            <label className="button button-secondary profile-avatar-button">
+              {isUploadingBanner ? 'Enviando…' : 'Alterar banner'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'banner')} disabled={isUploadingBanner} />
+            </label>
+            <small>JPG, PNG ou WebP · até 5 MB</small>
+          </div>
+        </div>
+        {bannerMessage ? <p className="success-text" role="status">{bannerMessage}</p> : null}
+        {bannerError ? <p className="error-text" role="alert">{bannerError}</p> : null}
+        <div className="profile-avatar-editor">
+          <div className="profile-avatar-preview">
+            {user?.avatarUrl ? <img src={user.avatarUrl} alt="Foto do perfil" /> : <User size={30} />}
+          </div>
+          <div className="profile-avatar-actions">
+            <label className="button button-secondary profile-avatar-button">
+              {isUploadingAvatar ? 'Enviando…' : 'Alterar foto'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'avatar')} disabled={isUploadingAvatar} />
+            </label>
+            <small>JPG, PNG ou WebP · até 5 MB</small>
+          </div>
+        </div>
+        {avatarMessage ? <p className="success-text" role="status">{avatarMessage}</p> : null}
+        {avatarError ? <p className="error-text" role="alert">{avatarError}</p> : null}
         <label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength="80" required /></label>
+        <label>
+          <span>Nome de usuário</span>
+          <div className="profile-username-input"><span aria-hidden="true">@</span><input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} minLength="3" maxLength="30" pattern="[a-zA-Z0-9._]{3,30}" placeholder="seu.usuario" /></div>
+          <small className="muted-state">Seu identificador público; use letras, números, pontos ou sublinhados.</small>
+        </label>
+        <label><span>Bio</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength="500" rows="4" placeholder="Conte um pouco sobre você." /></label>
+        <small className="muted-state">{bio.length}/500 caracteres</small>
+        <div className="profile-book-pickers">
+          <ProfileBookPicker
+            id="current-book"
+            title="Livro em leitura"
+            description="Escolha entre seus livros ativos."
+            books={activeBooks}
+            value={currentBookId}
+            onChange={setCurrentBookId}
+          />
+          <ProfileBookPicker
+            id="favorite-book"
+            title="Livro favorito"
+            description="Escolha entre os livros cadastrados na sua conta."
+            books={books}
+            value={favoriteBookId}
+            onChange={setFavoriteBookId}
+          />
+        </div>
+        {booksError ? <p className="error-text" role="alert">Não foi possível carregar seus livros: {booksError}</p> : null}
+        {!booksError && books.length === 0 ? <p className="muted-state">Ainda não há livros cadastrados. <Link to="/app/leituras">Adicione livros na área de leituras.</Link></p> : null}
         <label><span>Fuso horário IANA</span><input value={timezone} onChange={(event) => setTimezone(event.target.value)} maxLength="64" placeholder="America/Sao_Paulo" required /></label>
         <p className="muted-state">O fuso horário define em qual dia seus hábitos e check-ins são contabilizados.</p>
         {message ? <p className="success-text" role="status">{message}</p> : null}
         {error ? <p className="error-text" role="alert">{error}</p> : null}
         <button type="submit" className="button button-primary" disabled={isSaving}>{isSaving ? 'Salvando…' : 'Salvar perfil'}</button>
+      </form>
+      <form className="card profile-settings password-settings" onSubmit={submitPasswordChange}>
+        <h3>Alterar senha</h3>
+        <p className="muted-state">Para confirmar, vamos enviar um código de segurança para {user?.email}.</p>
+        {!passwordCodeSent ? <label><span>Senha atual</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} minLength="8" required /></label> : null}
+        <label><span>Nova senha</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength="8" maxLength="128" required /></label>
+        {passwordCodeSent ? <label><span>Código de verificação</span><input value={passwordCode} onChange={(event) => setPasswordCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength="6" required /></label> : null}
+        {passwordMessage ? <p className="success-text" role="status">{passwordMessage}</p> : null}
+        {passwordError ? <p className="error-text" role="alert">{passwordError}</p> : null}
+        <button type="submit" className="button button-primary" disabled={isChangingPassword}>{isChangingPassword ? 'Aguarde…' : passwordCodeSent ? 'Confirmar nova senha' : 'Enviar código de confirmação'}</button>
+        {passwordCodeSent ? <button type="button" className="button button-secondary" disabled={isChangingPassword} onClick={() => { setPasswordCodeSent(false); setPasswordCode(''); setPasswordMessage(''); setPasswordError(''); }}>Cancelar</button> : null}
       </form>
       <section className="card theme-settings" aria-labelledby="accent-color-heading">
         <h3 id="accent-color-heading">Cor de destaque</h3>
@@ -1955,6 +2805,14 @@ function SettingsPage() {
         {themeError ? <p className="error-text" role="alert">{themeError}</p> : null}
       </section>
       <p className="muted-state settings-note">Preferências de notificações e bloqueio ainda não são suportadas pela API.</p>
+      {cropRequest ? (
+        <ProfileImageCropper
+          source={cropRequest.source}
+          type={cropRequest.type}
+          onCancel={closeCropEditor}
+          onApply={(croppedImage) => uploadCroppedProfileImage(croppedImage, cropRequest.type)}
+        />
+      ) : null}
     </AppLayout>
   );
 }
@@ -2027,12 +2885,16 @@ function App() {
           <Route path="/precos" element={<Navigate to="/" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/cadastro" element={<SignupPage />} />
+          <Route path="/pessoas" element={<PublicProfileFinderPage />} />
+          <Route path="/u/:username" element={<PublicProfilePage />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="/app" element={<RequireAuth><DashboardPage /></RequireAuth>} />
           <Route path="/app/habitos" element={<RequireAuth><HabitsPage /></RequireAuth>} />
           <Route path="/app/metas" element={<RequireAuth><GoalsPage /></RequireAuth>} />
           <Route path="/app/leituras" element={<RequireAuth><ReadingLibrary /></RequireAuth>} />
+          <Route path="/app/academia" element={<RequireAuth><AppLayout><AcademyPage /></AppLayout></RequireAuth>} />
           <Route path="/app/analises" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
+          <Route path="/app/perfil" element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path="/app/configuracoes" element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

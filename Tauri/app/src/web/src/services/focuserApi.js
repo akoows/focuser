@@ -35,13 +35,23 @@ async function request(endpoint, { method = 'GET', body, credentials = 'include'
 
 export const focuserApi = {
   register: (data) => request('/auth/register', { method: 'POST', body: data }),
+  registrationImageSignature: (type) => request(`/auth/registration-${type}-signature`, { method: 'POST' }),
   login: (data) => request('/auth/login', { method: 'POST', body: data }),
+  verifyEmail: (data) => request('/auth/verify-email', { method: 'POST', body: data }),
+  resendEmailVerification: (data) => request('/auth/resend-verification', { method: 'POST', body: data }),
+  verifyLogin: (data) => request('/auth/verify-login', { method: 'POST', body: data }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
   updateProfile: (data) => request('/users/me', { method: 'PATCH', body: data }),
+  avatarUploadSignature: () => request('/users/me/avatar-signature', { method: 'POST' }),
+  bannerUploadSignature: () => request('/users/me/banner-signature', { method: 'POST' }),
+  startPasswordChange: (data) => request('/users/me/password-change', { method: 'POST', body: data }),
+  verifyPasswordChange: (data) => request('/users/me/password-change/verify', { method: 'POST', body: data }),
+  publicProfile: (username) => request(`/users/by-username/${encodeURIComponent(username)}`),
   dashboard: (date) => request(date ? `/dashboard?date=${encodeURIComponent(date)}` : '/dashboard'),
   progress: (period = 'week') => request(`/progress?period=${period}`),
   history: (period = 'week') => request(`/progress/history?period=${period}`),
+  analyzeHabits: (period = 'month') => request('/ai/analyze', { method: 'POST', body: { period } }),
   goals: {
     list: (params = {}) => {
       const query = new URLSearchParams(params).toString();
@@ -75,6 +85,29 @@ export const focuserApi = {
     updateBook: (id, data) => request(`/reading/books/${encodeURIComponent(id)}`, { method: 'PATCH', body: data }),
     logSession: (id, data) => request(`/reading/books/${encodeURIComponent(id)}/logs`, { method: 'POST', body: data }),
     removeBook: (id) => request(`/reading/books/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  gym: {
+    listPlans: () => request('/gym/plans'),
+    createPlan: (data) => request('/gym/plans', { method: 'POST', body: data }),
+    updatePlan: (id, data) => request(`/gym/plans/${encodeURIComponent(id)}`, { method: 'PATCH', body: data }),
+    removePlan: (id) => request(`/gym/plans/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    activeSession: () => request('/gym/sessions/active'),
+    startSession: (data = {}) => request('/gym/sessions', { method: 'POST', body: data }),
+    addExercise: (id, data) => request(`/gym/sessions/${encodeURIComponent(id)}/exercises`, { method: 'POST', body: data }),
+    addSet: (id, exerciseId) => request(`/gym/sessions/${encodeURIComponent(id)}/exercises/${encodeURIComponent(exerciseId)}/sets`, { method: 'POST', body: {} }),
+    updateSet: (id, exerciseId, setId, data) => request(`/gym/sessions/${encodeURIComponent(id)}/exercises/${encodeURIComponent(exerciseId)}/sets/${encodeURIComponent(setId)}`, { method: 'PATCH', body: data }),
+    completeSession: (id) => request(`/gym/sessions/${encodeURIComponent(id)}/complete`, { method: 'POST', body: {} }),
+    abandonSession: (id) => request(`/gym/sessions/${encodeURIComponent(id)}/abandon`, { method: 'POST', body: {} }),
+    listSessions: (params = {}) => {
+      const query = new URLSearchParams(params).toString();
+      return request(`/gym/sessions${query ? `?${query}` : ''}`);
+    },
+    deleteHistory: () => request('/gym/sessions/history', { method: 'DELETE', body: {} }),
+    removeSessionExercise: (id, exerciseId) => request(`/gym/sessions/${encodeURIComponent(id)}/exercises/${encodeURIComponent(exerciseId)}`, { method: 'DELETE', body: {} }),
+    getSession: (id) => request(`/gym/sessions/${encodeURIComponent(id)}`),
+    stats: (exercise) => request(`/gym/stats${exercise ? `?exercise=${encodeURIComponent(exercise)}` : ''}`),
+    calendar: () => request('/gym/calendar'),
+    sessionsForDay: (date) => request(`/gym/calendar/${encodeURIComponent(date)}`),
   },
   habits: {
     list: (params = {}) => {

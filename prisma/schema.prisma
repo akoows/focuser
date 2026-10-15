@@ -17,13 +17,39 @@
     passwordHash String?
     pass         String?
     avatarUrl    String?  @default("https://res.cloudinary.com/dylkeqcms/image/upload/v1762125098/default_uqhrk3.jpg")
+    username     String?  @unique
+    bio          String?
+    bannerUrl    String?
+    currentBookId String? @db.ObjectId
+    favoriteBookId String? @db.ObjectId
     timezone     String   @default("America/Sao_Paulo")
     accentColor  String   @default("#ffffff")
     tokenVersion Int      @default(0)
     emailVerifiedAt DateTime?
+    emailVerificationRequired Boolean @default(false)
+    emailVerificationCodeHash String?
+    emailVerificationExpiresAt DateTime?
+    emailVerificationAttempts Int @default(0)
+    loginCodeHash String?
+    loginCodeExpiresAt DateTime?
+    loginCodeAttempts Int @default(0)
+    passwordChangeCodeHash String?
+    passwordChangeCodeExpiresAt DateTime?
+    passwordChangeCodeAttempts Int @default(0)
     activeFocusSessionId String? @db.ObjectId
+    activeWorkoutSessionId String? @db.ObjectId
     createdAt    DateTime @default(now())
     updatedAt    DateTime @updatedAt
+  }
+
+  model PendingProfileUpload {
+    id        String   @id @default(auto()) @map("_id") @db.ObjectId
+    folder    String
+    expiresAt DateTime
+    usedAt    DateTime?
+    createdAt DateTime @default(now())
+
+    @@index([expiresAt])
   }
 
   enum Frequency {
@@ -36,6 +62,7 @@
     userId       String    @db.ObjectId
     name         String
     description  String?
+    category     String?
     frequency    Frequency @default(DAILY)
     daysOfWeek   Int[]
     isActive     Boolean   @default(true)
@@ -154,4 +181,69 @@
 
     @@index([userId, dateKey])
     @@index([userId, bookId, createdAt])
+  }
+
+  type WorkoutPlanExercise {
+    id           String
+    name         String
+    order        Int
+    plannedSets  Int
+    repTarget    String
+    restSeconds  Int
+  }
+
+  type WorkoutSet {
+    id          String
+    setNumber   Int
+    weight      Float?
+    reps        Int?
+    completed   Boolean  @default(false)
+    completedAt DateTime?
+  }
+
+  type WorkoutSessionExercise {
+    id           String
+    planExerciseId String?
+    name         String
+    order        Int
+    plannedSets  Int
+    repTarget    String
+    restSeconds  Int
+    sets         WorkoutSet[]
+  }
+
+  enum WorkoutSessionStatus {
+    IN_PROGRESS
+    COMPLETED
+    ABANDONED
+  }
+
+  model WorkoutPlan {
+    id        String                 @id @default(auto()) @map("_id") @db.ObjectId
+    userId    String                 @db.ObjectId
+    name      String
+    exercises WorkoutPlanExercise[]
+    createdAt DateTime               @default(now())
+    updatedAt DateTime               @updatedAt
+
+    @@index([userId, updatedAt])
+  }
+
+  model WorkoutSession {
+    id          String                   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String                   @db.ObjectId
+    planId      String?                  @db.ObjectId
+    planName    String?
+    status      WorkoutSessionStatus     @default(IN_PROGRESS)
+    revision    Int                      @default(0)
+    startedAt   DateTime                 @default(now())
+    completedAt DateTime?
+    abandonedAt DateTime?
+    exercises   WorkoutSessionExercise[]
+    createdAt   DateTime                 @default(now())
+    updatedAt   DateTime                 @updatedAt
+
+    @@index([userId, status, startedAt])
+    @@index([userId, completedAt])
+    @@index([userId, planId])
   }

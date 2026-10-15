@@ -1,9 +1,16 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
+import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { AUTH_COOKIE, createAuthToken, optionalAuth, requireAuth } from "../middlewares/auth.js";
 import { asyncHandler, HttpError, sendSuccess } from "../utils/apiResponse.js";
 import productivityRouter from "./productivityRoutes.js";
+import gymRouter from "./gymRoutes.js";
+import { assertEmailConfigured, sendAuthCode } from "../services/emailService.js";
+import { isAssetUrlInFolder, profileImageUploadSignature } from "../services/cloudinaryService.js";
+import { createRegistrationUploadSignature } from "../services/profileUploadService.js";
+import { categorizeHabit } from "../services/habitCategoryService.js";
+import { analyzeHabitMetrics } from "../services/aiAnalysisService.js";
 import {
     addDateKeyDays,
     dateKeyInTimezone,
@@ -25,6 +32,11 @@ import {
     registerSchema,
     loginSchema,
     updateUserSchema,
+    emailOnlySchema,
+    emailCodeSchema,
+    passwordChangeStartSchema,
+    passwordChangeVerifySchema,
+    aiAnalyzeSchema,
 } from "../validators/index.js";
 
 const router = Router();
@@ -32,17 +44,96 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const MAX_HABITS_PER_USER = 100;
 const MAX_BACKDATE_DAYS = 7;
 const MAX_RANGE_DAYS = 366;
+const AUTH_CODE_TTL_MS = 10 * 60 * 1000;
+const MAX_AUTH_CODE_ATTEMPTS = 5;
 
 function publicUser(user) {
     return {
         id: user.id,
         name: user.name,
         email: user.email,
+        username: typeof user.username === "string" && !user.username.startsWith("~unset:") ? user.username : null,
+        bio: user.bio || null,
+        avatarUrl: user.avatarUrl || null,
+        bannerUrl: user.bannerUrl || null,
+        currentBookId: user.currentBookId || null,
+        favoriteBookId: user.favoriteBookId || null,
         timezone: user.timezone,
         accentColor: user.accentColor || "#ffffff",
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
     };
+}
+
+function localEmailAuthBypass(email) {
+    return ["development", "test"].includes(process.env.NODE_ENV)
+        && email.toLowerCase().endsWith("@focuser.dev");
+}
+
+function createCodeHash(purpose, userId, code) {
+    const secret = process.env.JWT_SECRET;
+    if (typeof secret !== "string" || Buffer.byteLength(secret, "utf8") < 32) {
+        throw new HttpError(500, "AUTH_NOT_CONFIGURED", "Configure JWT_SECRET com ao menos 32 bytes.");
+    }
+    return crypto.createHmac("sha256", secret).update(`${purpose}:${userId}:${code}`).digest("hex");
+}
+
+function matchesCode(purpose, userId, code, hash) {
+    const actual = Buffer.from(createCodeHash(purpose, userId, code), "hex");
+    const expected = Buffer.from(hash, "hex");
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function newCode() {
+    return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
+async function issueAuthCode(user, purpose) {
+    const code = newCode();
+    const fields = purpose === "login"
+        ? {
+            loginCodeHash: createCodeHash(purpose, user.id, code),
+            loginCodeExpiresAt: new Date(Date.now() + AUTH_CODE_TTL_MS),
+            loginCodeAttempts: 0,
+        }
+        : purpose === "password-change"
+            ? {
+                passwordChangeCodeHash: createCodeHash(purpose, user.id, code),
+                passwordChangeCodeExpiresAt: new Date(Date.now() + AUTH_CODE_TTL_MS),
+                passwordChangeCodeAttempts: 0,
+            }
+            : {
+                emailVerificationCodeHash: createCodeHash(purpose, user.id, code),
+                emailVerificationExpiresAt: new Date(Date.now() + AUTH_CODE_TTL_MS),
+                emailVerificationAttempts: 0,
+            };
+    await prisma.user.update({ where: { id: user.id }, data: fields });
+    await sendAuthCode({ to: user.email, code, purpose });
+}
+
+async function claimRegistrationUpload(tx, uploadId, imageUrl, type) {
+    const upload = await tx.pendingProfileUpload.findUnique({ where: { id: uploadId } });
+    const expectedFolder = upload?.folder;
+    const typeFolder = type === "banner" ? "/banner" : "";
+    const baseFolder = (process.env.CLOUDINARY_FOLDER || "focuser/avatars").replace(/\/+$/, "");
+    const validFolder = expectedFolder === `${baseFolder}/registration/${uploadId}${typeFolder}`;
+    if (!upload || upload.usedAt || upload.expiresAt <= new Date() || !validFolder
+        || !isAssetUrlInFolder(imageUrl, expectedFolder)) {
+        throw new HttpError(400, "PROFILE_IMAGE_UPLOAD_INVALID", "A imagem selecionada expirou ou não foi enviada pelo fluxo de cadastro. Selecione-a novamente.");
+    }
+    const claimed = await tx.pendingProfileUpload.updateMany({
+        where: {
+            id: uploadId,
+            OR: [{ usedAt: null }, { usedAt: { isSet: false } }],
+            expiresAt: { gt: new Date() },
+            folder: expectedFolder,
+        },
+        data: { usedAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+        throw new HttpError(400, "PROFILE_IMAGE_UPLOAD_INVALID", "A imagem selecionada expirou ou já foi usada em outro cadastro.");
+    }
+    return imageUrl;
 }
 
 function setAuthCookie(res, token) {
@@ -88,6 +179,7 @@ function mapHabit(habit) {
         id: habit.id,
         name: habit.name,
         description: habit.description,
+        category: habit.category || null,
         frequency: habit.frequency,
         daysOfWeek: habit.daysOfWeek,
         isActive: habit.isActive,
@@ -183,25 +275,48 @@ router.get("/health", asyncHandler(async (_req, res) => {
 
 router.post("/auth/register", asyncHandler(async (req, res) => {
     const input = parse(registerSchema, req.body);
-    if (await prisma.user.findUnique({ where: { email: input.email } })) {
+    const existingEmail = await prisma.user.findUnique({ where: { email: input.email }, select: { id: true } });
+    if (existingEmail) {
         throw new HttpError(409, "EMAIL_IN_USE", "Este e-mail já está cadastrado.");
     }
+    if (await prisma.user.findUnique({ where: { username: input.username }, select: { id: true } })) {
+        throw new HttpError(409, "USERNAME_IN_USE", "Este nome de usuário já está em uso.");
+    }
+    const skipEmailAuth = localEmailAuthBypass(input.email);
+    if (!skipEmailAuth) assertEmailConfigured();
     const passwordHash = await bcrypt.hash(input.password, 12);
     try {
-        const user = await prisma.user.create({
-            data: {
-                name: input.name,
-                email: input.email,
-                passwordHash,
-                timezone: input.timezone || "America/Sao_Paulo",
-                tokenVersion: 0,
-                accentColor: "#ffffff",
-            },
+        const user = await prisma.$transaction(async (tx) => {
+            const avatarUrl = await claimRegistrationUpload(tx, input.avatarUploadId, input.avatarUrl, "avatar");
+            const bannerUrl = input.bannerUploadId
+                ? await claimRegistrationUpload(tx, input.bannerUploadId, input.bannerUrl, "banner")
+                : null;
+            return tx.user.create({
+                data: {
+                    name: input.name,
+                    username: input.username,
+                    email: input.email,
+                    passwordHash,
+                    avatarUrl,
+                    bannerUrl,
+                    timezone: input.timezone || "America/Sao_Paulo",
+                    tokenVersion: 0,
+                    accentColor: "#ffffff",
+                    emailVerificationRequired: !skipEmailAuth,
+                    ...(skipEmailAuth ? { emailVerifiedAt: new Date() } : {}),
+                },
+            });
         });
-        return sendSuccess(res, { user: publicUser(user) }, 201);
+        if (!skipEmailAuth) await issueAuthCode(user, "email-verification");
+        return sendSuccess(res, {
+            user: publicUser(user),
+            emailVerificationRequired: !skipEmailAuth,
+        }, 201);
     } catch (error) {
         if (error instanceof HttpError) throw error;
         if (error?.code === "P2002") {
+            const existingUsername = await prisma.user.findUnique({ where: { username: input.username }, select: { id: true } });
+            if (existingUsername) throw new HttpError(409, "USERNAME_IN_USE", "Este nome de usuário já está em uso.");
             throw new HttpError(409, "EMAIL_IN_USE", "Este e-mail já está cadastrado.");
         }
         throw error;
@@ -210,7 +325,7 @@ router.post("/auth/register", asyncHandler(async (req, res) => {
 
 router.post("/auth/login", asyncHandler(async (req, res) => {
     const input = parse(loginSchema, req.body);
-    const user = await prisma.user.findUnique({ where: { email: input.email } });
+    let user = await prisma.user.findUnique({ where: { email: input.email } });
     const hash = user?.passwordHash || user?.pass;
     const valid = hash ? await bcrypt.compare(input.password, hash) : false;
     if (!user || !valid) {
@@ -224,7 +339,125 @@ router.post("/auth/login", asyncHandler(async (req, res) => {
         user.passwordHash = user.pass;
         user.pass = null;
     }
+    if (localEmailAuthBypass(user.email) && (user.emailVerificationRequired || !user.emailVerifiedAt)) {
+        user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                emailVerifiedAt: new Date(),
+                emailVerificationRequired: false,
+                emailVerificationCodeHash: null,
+                emailVerificationExpiresAt: null,
+                emailVerificationAttempts: 0,
+            },
+        });
+    }
+    if (!localEmailAuthBypass(user.email)) {
+        if (!user.emailVerifiedAt) {
+            if (!user.emailVerificationRequired) {
+                user = await prisma.user.update({
+                    where: { id: user.id },
+                    data: { emailVerificationRequired: true },
+                });
+            }
+            await issueAuthCode(user, "email-verification");
+            return sendSuccess(res, { emailVerificationRequired: true });
+        }
+        if (!user.emailVerificationRequired) {
+            user = await prisma.user.update({
+                where: { id: user.id },
+                data: { emailVerificationRequired: true },
+            });
+        }
+        await issueAuthCode(user, "login");
+        return sendSuccess(res, { twoFactorRequired: true });
+    }
     setAuthCookie(res, createAuthToken(user));
+    return sendSuccess(res, { user: publicUser(user) });
+}));
+
+router.post("/auth/registration-avatar-signature", asyncHandler(async (_req, res) => {
+    return sendSuccess(res, await createRegistrationUploadSignature("avatar"));
+}));
+
+router.post("/auth/registration-banner-signature", asyncHandler(async (_req, res) => {
+    return sendSuccess(res, await createRegistrationUploadSignature("banner"));
+}));
+
+router.post("/auth/verify-email", asyncHandler(async (req, res) => {
+    const { email, code } = parse(emailCodeSchema, req.body);
+    const user = await prisma.user.findUnique({ where: { email } });
+    const invalid = () => new HttpError(400, "INVALID_OR_EXPIRED_CODE", "Código inválido ou expirado.");
+    if (!user || user.emailVerifiedAt || !user.emailVerificationCodeHash
+        || !user.emailVerificationExpiresAt || user.emailVerificationExpiresAt <= new Date()
+        || user.emailVerificationAttempts >= MAX_AUTH_CODE_ATTEMPTS) {
+        throw invalid();
+    }
+    if (!matchesCode("email-verification", user.id, code, user.emailVerificationCodeHash)) {
+        const data = user.emailVerificationAttempts + 1 >= MAX_AUTH_CODE_ATTEMPTS
+            ? { emailVerificationCodeHash: null, emailVerificationExpiresAt: null, emailVerificationAttempts: 0 }
+            : { emailVerificationAttempts: { increment: 1 } };
+        const changed = await prisma.user.updateMany({
+            where: { id: user.id, emailVerificationCodeHash: user.emailVerificationCodeHash, emailVerifiedAt: null },
+            data,
+        });
+        if (!changed.count) throw invalid();
+        throw invalid();
+    }
+    const changed = await prisma.user.updateMany({
+        where: {
+            id: user.id,
+            emailVerificationCodeHash: user.emailVerificationCodeHash,
+            emailVerifiedAt: null,
+            emailVerificationExpiresAt: { gt: new Date() },
+        },
+        data: {
+            emailVerifiedAt: new Date(),
+            emailVerificationRequired: true,
+            emailVerificationCodeHash: null,
+            emailVerificationExpiresAt: null,
+            emailVerificationAttempts: 0,
+        },
+    });
+    if (!changed.count) throw invalid();
+    return sendSuccess(res, { verified: true });
+}));
+
+router.post("/auth/resend-verification", asyncHandler(async (req, res) => {
+    const { email } = parse(emailOnlySchema, req.body);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && !user.emailVerifiedAt && !localEmailAuthBypass(email)) {
+        await issueAuthCode(user, "email-verification");
+    }
+    return sendSuccess(res, { message: "Se a conta existir e precisar de verificação, enviaremos um novo código." });
+}));
+
+router.post("/auth/verify-login", asyncHandler(async (req, res) => {
+    const { email, code } = parse(emailCodeSchema, req.body);
+    const user = await prisma.user.findUnique({ where: { email } });
+    const invalid = () => new HttpError(400, "INVALID_OR_EXPIRED_CODE", "Código inválido ou expirado.");
+    if (!user || !user.emailVerifiedAt || !user.loginCodeHash
+        || !user.loginCodeExpiresAt || user.loginCodeExpiresAt <= new Date()
+        || user.loginCodeAttempts >= MAX_AUTH_CODE_ATTEMPTS) {
+        throw invalid();
+    }
+    if (!matchesCode("login", user.id, code, user.loginCodeHash)) {
+        const data = user.loginCodeAttempts + 1 >= MAX_AUTH_CODE_ATTEMPTS
+            ? { loginCodeHash: null, loginCodeExpiresAt: null, loginCodeAttempts: 0 }
+            : { loginCodeAttempts: { increment: 1 } };
+        const changed = await prisma.user.updateMany({
+            where: { id: user.id, loginCodeHash: user.loginCodeHash },
+            data,
+        });
+        if (!changed.count) throw invalid();
+        throw invalid();
+    }
+    const token = createAuthToken(user);
+    const changed = await prisma.user.updateMany({
+        where: { id: user.id, loginCodeHash: user.loginCodeHash, loginCodeExpiresAt: { gt: new Date() } },
+        data: { loginCodeHash: null, loginCodeExpiresAt: null, loginCodeAttempts: 0 },
+    });
+    if (!changed.count) throw invalid();
+    setAuthCookie(res, token);
     return sendSuccess(res, { user: publicUser(user) });
 }));
 
@@ -243,10 +476,180 @@ router.post("/auth/logout", asyncHandler(async (req, res) => {
 router.get("/auth/me", requireAuth, (req, res) => sendSuccess(res, { user: publicUser(req.user) }));
 router.get("/users/me", requireAuth, (req, res) => sendSuccess(res, { user: publicUser(req.user) }));
 
+router.get("/users/by-username/:username", asyncHandler(async (req, res) => {
+    const username = req.params.username.trim().toLowerCase();
+    if (!/^[a-z0-9._]{3,30}$/.test(username)) {
+        throw new HttpError(400, "VALIDATION_ERROR", "Nome de usuário inválido.");
+    }
+    const user = await prisma.user.findUnique({
+        where: { username },
+        select: {
+            id: true,
+            name: true,
+            username: true,
+            bio: true,
+            avatarUrl: true,
+            bannerUrl: true,
+            currentBookId: true,
+            favoriteBookId: true,
+            accentColor: true,
+            createdAt: true,
+        },
+    });
+    if (!user || user.username?.startsWith("~unset:")) {
+        throw new HttpError(404, "PUBLIC_PROFILE_NOT_FOUND", "Este perfil público não foi encontrado.");
+    }
+    const [currentBook, favoriteBook] = await Promise.all([
+        user.currentBookId
+            ? prisma.readingBook.findFirst({
+                where: { id: user.currentBookId, userId: user.id, isActive: true },
+                select: { id: true, title: true, author: true, coverId: true, coverUrl: true, currentPage: true, totalPages: true },
+            })
+            : null,
+        user.favoriteBookId
+            ? prisma.readingBook.findFirst({
+                where: { id: user.favoriteBookId, userId: user.id },
+                select: { id: true, title: true, author: true, coverId: true, coverUrl: true },
+            })
+            : null,
+    ]);
+    return sendSuccess(res, {
+        profile: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            bio: user.bio || null,
+            avatarUrl: user.avatarUrl || null,
+            bannerUrl: user.bannerUrl || null,
+            accentColor: user.accentColor || "#ffffff",
+            currentBook,
+            favoriteBook,
+            createdAt: user.createdAt,
+        },
+    });
+}));
+
 router.patch("/users/me", requireAuth, asyncHandler(async (req, res) => {
     const input = parse(updateUserSchema, req.body);
-    const user = await prisma.user.update({ where: { id: req.user.id }, data: input });
+    const baseFolder = (process.env.CLOUDINARY_FOLDER || "focuser/avatars").replace(/\/+$/, "");
+    const validProfileImage = (url, type) => url === null || isAssetUrlInFolder(
+        url,
+        `${baseFolder}/${req.user.id}${type === "banner" ? "/banner" : ""}`,
+    );
+    if (Object.hasOwn(input, "avatarUrl") && !validProfileImage(input.avatarUrl, "avatar")) {
+        throw new HttpError(400, "INVALID_AVATAR_URL", "O avatar precisa ser enviado para a pasta Cloudinary da sua conta.");
+    }
+    if (Object.hasOwn(input, "bannerUrl") && !validProfileImage(input.bannerUrl, "banner")) {
+        throw new HttpError(400, "INVALID_BANNER_URL", "O banner precisa ser enviado para a pasta Cloudinary da sua conta.");
+    }
+    const bookChecks = [];
+    if (input.currentBookId) {
+        bookChecks.push(prisma.readingBook.findFirst({
+            where: { id: input.currentBookId, userId: req.user.id, isActive: true },
+            select: { id: true },
+        }).then((book) => {
+            if (!book) throw new HttpError(404, "CURRENT_BOOK_NOT_FOUND", "O livro em leitura não está entre os livros ativos da sua conta.");
+        }));
+    }
+    if (input.favoriteBookId) {
+        bookChecks.push(prisma.readingBook.findFirst({
+            where: { id: input.favoriteBookId, userId: req.user.id },
+            select: { id: true },
+        }).then((book) => {
+            if (!book) throw new HttpError(404, "FAVORITE_BOOK_NOT_FOUND", "O livro favorito não foi encontrado entre os livros da sua conta.");
+        }));
+    }
+    await Promise.all(bookChecks);
+    const data = Object.hasOwn(input, "username") && input.username === null
+        ? { ...input, username: `~unset:${req.user.id}` }
+        : input;
+    let user;
+    try {
+        user = await prisma.user.update({ where: { id: req.user.id }, data });
+    } catch (error) {
+        if (error?.code === "P2002" && Object.hasOwn(input, "username")) {
+            throw new HttpError(409, "USERNAME_IN_USE", "Este nome de usuário já está em uso.");
+        }
+        throw error;
+    }
     return sendSuccess(res, { user: publicUser(user) });
+}));
+
+router.post("/users/me/avatar-signature", requireAuth, (req, res) => {
+    return sendSuccess(res, profileImageUploadSignature(req.user.id, "avatar"));
+});
+
+router.post("/users/me/banner-signature", requireAuth, (req, res) => {
+    return sendSuccess(res, profileImageUploadSignature(req.user.id, "banner"));
+});
+
+router.post("/users/me/password-change", requireAuth, asyncHandler(async (req, res) => {
+    const input = parse(passwordChangeStartSchema, req.body);
+    const hash = req.user.passwordHash || req.user.pass;
+    if (!hash || !(await bcrypt.compare(input.currentPassword, hash))) {
+        throw new HttpError(401, "INVALID_CREDENTIALS", "A senha atual está incorreta.");
+    }
+    if (await bcrypt.compare(input.newPassword, hash)) {
+        throw new HttpError(400, "PASSWORD_UNCHANGED", "A nova senha deve ser diferente da senha atual.");
+    }
+    assertEmailConfigured();
+    await issueAuthCode(req.user, "password-change");
+    return sendSuccess(res, { message: "Enviamos um código para confirmar a alteração da senha." });
+}));
+
+router.post("/users/me/password-change/verify", requireAuth, asyncHandler(async (req, res) => {
+    const { code, newPassword } = parse(passwordChangeVerifySchema, req.body);
+    const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+            id: true,
+            email: true,
+            passwordChangeCodeHash: true,
+            passwordChangeCodeExpiresAt: true,
+            passwordChangeCodeAttempts: true,
+        },
+    });
+    const invalid = () => new HttpError(400, "INVALID_OR_EXPIRED_CODE", "Código inválido ou expirado.");
+    if (!user?.passwordChangeCodeHash || !user.passwordChangeCodeExpiresAt
+        || user.passwordChangeCodeExpiresAt <= new Date()
+        || user.passwordChangeCodeAttempts >= MAX_AUTH_CODE_ATTEMPTS) {
+        throw invalid();
+    }
+    if (!matchesCode("password-change", user.id, code, user.passwordChangeCodeHash)) {
+        const data = user.passwordChangeCodeAttempts + 1 >= MAX_AUTH_CODE_ATTEMPTS
+            ? { passwordChangeCodeHash: null, passwordChangeCodeExpiresAt: null, passwordChangeCodeAttempts: 0 }
+            : { passwordChangeCodeAttempts: { increment: 1 } };
+        const changed = await prisma.user.updateMany({
+            where: { id: user.id, passwordChangeCodeHash: user.passwordChangeCodeHash },
+            data,
+        });
+        if (!changed.count) throw invalid();
+        throw invalid();
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const changed = await prisma.user.updateMany({
+        where: {
+            id: user.id,
+            passwordChangeCodeHash: user.passwordChangeCodeHash,
+            passwordChangeCodeExpiresAt: { gt: new Date() },
+            passwordChangeCodeAttempts: { lt: MAX_AUTH_CODE_ATTEMPTS },
+        },
+        data: {
+            passwordHash,
+            pass: null,
+            tokenVersion: { increment: 1 },
+            passwordChangeCodeHash: null,
+            passwordChangeCodeExpiresAt: null,
+            passwordChangeCodeAttempts: 0,
+            loginCodeHash: null,
+            loginCodeExpiresAt: null,
+            loginCodeAttempts: 0,
+        },
+    });
+    if (!changed.count) throw invalid();
+    const refreshedUser = await prisma.user.findUnique({ where: { id: user.id } });
+    setAuthCookie(res, createAuthToken(refreshedUser));
+    return sendSuccess(res, { user: publicUser(refreshedUser) });
 }));
 
 router.post("/habits", requireAuth, asyncHandler(async (req, res) => {
@@ -256,11 +659,13 @@ router.post("/habits", requireAuth, asyncHandler(async (req, res) => {
         throw new HttpError(422, "HABIT_LIMIT_REACHED", "O limite de 100 hábitos foi atingido.");
     }
     const today = dateKeyInTimezone(new Date(), req.user.timezone);
+    const category = await categorizeHabit(input.name, input.description);
     const habit = await prisma.habit.create({
         data: {
             userId: req.user.id,
             name: input.name,
             description: input.description ?? null,
+            category,
             frequency: input.frequency,
             daysOfWeek: input.frequency === "DAILY" ? ALL_DAYS : input.daysOfWeek,
             startDateKey: today,
@@ -309,10 +714,14 @@ router.patch("/habits/:id", requireAuth, asyncHandler(async (req, res) => {
     if (frequency === "CUSTOM" && daysOfWeek.length === 0) {
         throw new HttpError(400, "VALIDATION_ERROR", "Informe ao menos um dia para frequência CUSTOM.");
     }
+    const category = Object.hasOwn(input, "name") || Object.hasOwn(input, "description")
+        ? await categorizeHabit(input.name ?? habit.name, input.description !== undefined ? input.description : habit.description)
+        : habit.category;
     const updated = await prisma.habit.update({
         where: { id: habit.id },
         data: {
             ...input,
+            category,
             frequency,
             daysOfWeek: frequency === "DAILY" ? ALL_DAYS : daysOfWeek,
         },
@@ -541,6 +950,61 @@ router.get("/progress/history", requireAuth, asyncHandler(async (req, res) => {
     });
 }));
 
+router.post("/ai/analyze", requireAuth, asyncHandler(async (req, res) => {
+    const { period } = parse(aiAnalyzeSchema, req.body);
+    const days = period === "week" ? 7 : 30;
+    const to = dateKeyInTimezone(new Date(), req.user.timezone);
+    const from = addDateKeyDays(to, -(days - 1));
+    const data = await loadUserProgress(req.user, from, to);
+    if (data.scheduled === 0) {
+        throw new HttpError(422, "INSUFFICIENT_DATA", "Não há hábitos programados no período para analisar.");
+    }
+
+    const habits = data.habits.map((habit) => {
+        const scheduled = data.series.filter((day) => isHabitScheduled(habit, day.date)).length;
+        const completed = data.checkIns.filter((checkIn) => checkIn.habitId === habit.id).length;
+        return {
+            name: String(habit.name).replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80),
+            category: habit.category || null,
+            frequency: habit.frequency,
+            scheduled,
+            completed,
+            completionRate: scheduled ? completed / scheduled : null,
+        };
+    });
+    const weekdays = Array.from({ length: 7 }, (_, weekday) => {
+        const dates = data.series.filter((day) => new Date(`${day.date}T00:00:00Z`).getUTCDay() === weekday);
+        const scheduled = dates.reduce((sum, day) => sum + day.scheduled, 0);
+        const completed = dates.reduce((sum, day) => sum + day.completed, 0);
+        return {
+            weekday: ["dom", "seg", "ter", "qua", "qui", "sex", "sab"][weekday],
+            scheduled,
+            completed,
+            completionRate: scheduled ? completed / scheduled : null,
+        };
+    });
+    const metrics = {
+        period: { from, to, days, type: period },
+        totals: {
+            activeHabits: data.habits.length,
+            scheduled: data.scheduled,
+            completed: data.completed,
+            pending: data.scheduled - data.completed,
+            completionRate: data.completed / data.scheduled,
+        },
+        streaks: { current: data.streaks.currentStreak, best: data.streaks.bestStreak },
+        habits,
+        weekdays,
+    };
+    const analysis = await analyzeHabitMetrics(metrics);
+    return sendSuccess(res, {
+        period: metrics.period,
+        metrics: { totals: metrics.totals, streaks: metrics.streaks },
+        ...analysis,
+        generatedAt: new Date().toISOString(),
+    });
+}));
+
 router.get("/habits/:id/progress", requireAuth, asyncHandler(async (req, res) => {
     const habit = await findOwnedHabit(req.user.id, req.params.id);
     const query = parse(periodQuerySchema, req.query);
@@ -591,5 +1055,6 @@ router.get("/habits/:id/progress", requireAuth, asyncHandler(async (req, res) =>
 }));
 
 router.use(productivityRouter);
+router.use(gymRouter);
 
 export default router;

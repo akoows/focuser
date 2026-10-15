@@ -5,6 +5,8 @@ import { isDateKey } from "../utils/date.js";
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Identificador inválido.");
 const dateKey = z.string().refine(isDateKey, "Data deve estar no formato YYYY-MM-DD.");
 const email = z.string().trim().email().max(254).transform((value) => value.toLowerCase());
+const username = z.string().trim().toLowerCase().regex(/^[a-z0-9._]{3,30}$/, "Use de 3 a 30 letras, números, pontos ou sublinhados");
+const bio = z.string().trim().max(500).nullable();
 const password = z.string().min(8).max(128).refine(
     (value) => Buffer.byteLength(value, "utf8") <= 72,
     "A senha não pode exceder 72 bytes."
@@ -21,10 +23,18 @@ const dayOfWeek = z.number().int().min(0).max(6);
 
 export const registerSchema = z.object({
     name: z.string().trim().min(1).max(80),
+    username,
     email,
     password,
     timezone: timezone.optional(),
-}).strict();
+    avatarUploadId: objectId,
+    avatarUrl: z.string().url().max(1000),
+    bannerUploadId: objectId.optional(),
+    bannerUrl: z.string().url().max(1000).optional(),
+}).strict().refine((value) => Boolean(value.bannerUploadId) === Boolean(value.bannerUrl), {
+    path: ["bannerUrl"],
+    message: "O upload do banner está incompleto.",
+});
 
 export const loginSchema = z.object({
     email,
@@ -34,11 +44,36 @@ export const loginSchema = z.object({
     ),
 }).strict();
 
+export const emailOnlySchema = z.object({ email }).strict();
+export const emailCodeSchema = z.object({
+    email,
+    code: z.string().regex(/^\d{6}$/, "Código inválido."),
+}).strict();
+
 export const updateUserSchema = z.object({
     name: z.string().trim().min(1).max(80).optional(),
+    username: username.nullable().optional(),
+    bio: bio.optional(),
     timezone: timezone.optional(),
     accentColor: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida.").optional(),
+    avatarUrl: z.string().url().max(1000).nullable().optional(),
+    bannerUrl: z.string().url().max(1000).nullable().optional(),
+    currentBookId: objectId.nullable().optional(),
+    favoriteBookId: objectId.nullable().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
+
+export const passwordChangeStartSchema = z.object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: password,
+}).strict().refine((value) => value.currentPassword !== value.newPassword, {
+    path: ["newPassword"],
+    message: "A nova senha deve ser diferente da senha atual.",
+});
+
+export const passwordChangeVerifySchema = z.object({
+    code: z.string().regex(/^\d{6}$/, "Código inválido."),
+    newPassword: password,
+}).strict();
 
 export const goalCreateSchema = z.object({
     name: z.string().trim().min(1).max(100),
@@ -142,6 +177,52 @@ export const periodQuerySchema = z.object({
     to: dateKey.optional(),
 }).strict().refine((value) => (value.from && value.to) || (!value.from && !value.to),
     "Informe from e to juntos.");
+
+export const aiAnalyzeSchema = z.object({
+    period: z.enum(["week", "month"]).default("month"),
+}).strict();
+
+const repetitionTarget = z.string().trim().min(1).max(9)
+    .regex(/^\d{1,4}(?:\s*-\s*\d{1,4})?$/, "Informe uma quantidade ou faixa de repetições.")
+    .refine((value) => {
+        const [minimum, maximum = minimum] = value.split("-").map((part) => Number(part.trim()));
+        return minimum >= 1 && maximum <= 1_000 && minimum <= maximum;
+    }, "A faixa de repetições deve estar entre 1 e 1.000 e em ordem crescente.");
+
+const workoutExerciseSchema = z.object({
+    id: z.string().uuid().optional(),
+    name: z.string().trim().min(1).max(100),
+    plannedSets: z.number().int().min(1).max(30).default(3),
+    repTarget: repetitionTarget.default("8-12"),
+    restSeconds: z.number().int().min(0).max(900).default(90),
+}).strict();
+
+export const workoutPlanSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    exercises: z.array(workoutExerciseSchema).max(50).default([]),
+}).strict().superRefine((value, context) => {
+    const ids = value.exercises.flatMap((exercise) => exercise.id ? [exercise.id] : []);
+    if (new Set(ids).size !== ids.length) {
+        context.addIssue({ code: "custom", path: ["exercises"], message: "Os exercícios não podem ter identificadores duplicados." });
+    }
+});
+
+export const workoutStartSchema = z.object({
+    planId: objectId.optional(),
+}).strict();
+
+export const workoutSessionExerciseSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    plannedSets: z.number().int().min(1).max(30).default(3),
+    repTarget: repetitionTarget.default("8-12"),
+    restSeconds: z.number().int().min(0).max(900).default(90),
+}).strict();
+
+export const workoutSetSchema = z.object({
+    weight: z.number().finite().min(0).max(100_000),
+    reps: z.number().int().min(1).max(1_000),
+    completed: z.boolean().default(false),
+}).strict();
 
 export function parse(schema, value) {
     const result = schema.safeParse(value);

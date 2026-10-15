@@ -405,12 +405,21 @@ router.patch("/reading/books/:id", requireAuth, asyncHandler(async (req, res) =>
     if (currentPage > totalPages) {
         throw new HttpError(400, "VALIDATION_ERROR", "A página atual não pode exceder o total.");
     }
-    const updated = await prisma.readingBook.update({
-        where: { id: book.id },
-        data: {
-            ...input,
-            ...(input.isbn !== undefined ? { isbn: input.isbn || null } : {}),
-        },
+    const updated = await prisma.$transaction(async (tx) => {
+        const result = await tx.readingBook.update({
+            where: { id: book.id },
+            data: {
+                ...input,
+                ...(input.isbn !== undefined ? { isbn: input.isbn || null } : {}),
+            },
+        });
+        if (input.isActive === false) {
+            await tx.user.updateMany({
+                where: { id: req.user.id, currentBookId: book.id },
+                data: { currentBookId: null },
+            });
+        }
+        return result;
     });
     return sendSuccess(res, { book: mapBook(updated) });
 }));
@@ -459,16 +468,26 @@ router.get("/reading/today", requireAuth, asyncHandler(async (req, res) => {
     const booksById = new Map(books.map((book) => [book.id, book]));
     return sendSuccess(res, {
         date,
+        totalPages: logs.reduce((total, log) => total + log.pagesRead, 0),
+        totalMinutes: logs.reduce((total, log) => total + log.minutesRead, 0),
         items: logs.map((log) => mapReadingLog(log, booksById.get(log.bookId))),
     });
 }));
 
 router.delete("/reading/books/:id", requireAuth, asyncHandler(async (req, res) => {
     const book = await findOwnedBook(req.user.id, req.params.id);
-    await prisma.$transaction([
-        prisma.readingLog.deleteMany({ where: { userId: req.user.id, bookId: book.id } }),
-        prisma.readingBook.delete({ where: { id: book.id } }),
-    ]);
+    await prisma.$transaction(async (tx) => {
+        await tx.user.updateMany({
+            where: { id: req.user.id, currentBookId: book.id },
+            data: { currentBookId: null },
+        });
+        await tx.user.updateMany({
+            where: { id: req.user.id, favoriteBookId: book.id },
+            data: { favoriteBookId: null },
+        });
+        await tx.readingLog.deleteMany({ where: { userId: req.user.id, bookId: book.id } });
+        await tx.readingBook.delete({ where: { id: book.id } });
+    });
     return sendSuccess(res, { deleted: true });
 }));
 
