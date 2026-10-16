@@ -1,0 +1,9 @@
+.session-loading {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: #090909;
+  color: #aaaaaa;
+  font-family: Inter, Arial, sans-serif;
+  font-size: 13px;
+}
