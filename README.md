@@ -5,7 +5,7 @@ Express API backed by Prisma and MongoDB. Responses use `{ success, data }` on s
 ## Run locally
 
 1. Copy `.env.example` to `.env` and set `DATABASE_URL` to a MongoDB replica set and `JWT_SECRET` to a random secret of at least 32 bytes.
-2. Run `npm run db:generate`, then `npx prisma db push` to apply the MongoDB collection changes. `db push` is an explicit deployment step and is not run by the API or test suite.
+2. Run `npm run db:generate`, then `npm run db:normalize-legacy-usernames` to safely assign internal placeholders to older accounts whose username is missing. This preserves those accounts and allows MongoDB to create the unique username index. Then run `npx prisma db push` to apply the MongoDB collection changes. `db push` is an explicit deployment step and is not run by the API or test suite.
 3. Start the API with `npm start`.
 
 `GOOGLE_BOOKS_API_KEY` enables Google Books results in addition to Open Library's public search. Open Library is used without a key. If every configured book-search provider is unavailable, lookup returns `502 BOOK_LOOKUP_UNAVAILABLE`; partial provider outages are reported in the `sources` object. `GROQ_API_KEY` optionally enables a book-edition recommendation; without it, lookup returns regular search results with no AI recommendation. Set `GROQ_MODEL` to override the default model.

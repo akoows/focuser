@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
     "db:generate": "prisma generate",
+    "db:normalize-legacy-usernames": "node --env-file-if-exists=.env src/scripts/normalizeLegacyUsernames.js",
     "test:api": "node --test"
   },
   "repository": {
