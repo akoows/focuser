@@ -5,7 +5,9 @@ Express API backed by Prisma and MongoDB. Responses use `{ success, data }` on s
 ## Run locally
 
 1. Copy `.env.example` to `.env` and set `DATABASE_URL` to a MongoDB replica set and `JWT_SECRET` to a random secret of at least 32 bytes.
+
 2. Run `npm run prisma:generate`, then `npm run db:push` to apply the MongoDB collection changes. `db:push` is an explicit deployment step and is not run by the API or test suite.
+
 3. Start the API with `npm start`.
 
 The API validates critical configuration before listening. `DATABASE_URL` must be a MongoDB URL with a database name; `JWT_SECRET` must contain at least 32 bytes. Optional provider credentials are only required when their associated feature is used.
