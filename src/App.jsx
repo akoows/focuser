@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -7,38 +7,44 @@ import {
   CheckCheck,
   ChevronDown,
   Clock3,
-  Expand,
-  Flame,
-  Focus,
-  House,
-  Headphones,
-  LayoutDashboard,
+  Dumbbell,
   LogOut,
-  MoreHorizontal,
-  Pause,
   Pencil,
-  Plus,
-  Play,
-  Search,
   Settings,
-  Shrink,
   ShieldCheck,
   Target,
-  Trash2,
   TrendingUp,
   Trophy,
   User,
   UserMinus,
   UserPlus,
   Users,
-  VolumeX,
-  Waves,
   X,
 } from 'lucide-react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { focuserApi } from './services/focuserApi';
+import NumberInput from './components/NumberInput';
 import focuserLogo from './assets/logo-wordmark.png';
+import { activateModalFocus } from './utils/modalFocus';
+import { navigateWithMotion } from './utils/navigationMotion';
+import { getAppAccentColor, getAccentContrast } from './pages/settings/appThemeSettings';
+import AppearanceSettings from './pages/settings/AppearanceSettings';
+import AnalysisInsights from './pages/analytics/AnalysisInsights';
+import FocusHistory from './pages/analytics/FocusHistory';
+import './RecoveredFeatures.css';
 import './App.css';
+import './HabitReference.css';
+import './SidebarRail.css';
+import './IntegrationFeatures.css';
+import './MotionEnhancements.css';
+import './UnifiedUI.css';
+import './MotionDetails.css';
+
+const AcademyPageModule = lazy(() => import('./pages/AcademyPage.jsx'));
+const HabitsPageModule = lazy(() => import('./pages/habits/HabitsPage.jsx'));
+const GoalsPageModule = lazy(() => import('./pages/GoalsPage.jsx'));
+const ReadingPageModule = lazy(() => import('./pages/reading/ReadingPageView.jsx'));
+const ProfilePageModule = lazy(() => import('./pages/ProfilePage.jsx'));
 
 const AuthContext = createContext(null);
 const createFocusStatusSessionId = () => window.crypto?.randomUUID?.()
@@ -46,15 +52,6 @@ const createFocusStatusSessionId = () => window.crypto?.randomUUID?.()
     const random = Math.floor(Math.random() * 16);
     return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16);
   });
-const ACCENT_COLORS = [
-  { value: '#ffffff', label: 'Branco' },
-  { value: '#c4b5fd', label: 'Lavanda' },
-  { value: '#93c5fd', label: 'Azul' },
-  { value: '#6ee7b7', label: 'Menta' },
-  { value: '#f9a8d4', label: 'Rosa' },
-  { value: '#fcd34d', label: 'Âmbar' },
-];
-
 function ProfileImageCropper({ source, type, onCancel, onApply }) {
   const frameRef = useRef(null);
   const imageRef = useRef(null);
@@ -286,9 +283,9 @@ function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    const activeAccentColor = user ? accentColor : '#ffffff';
+    const activeAccentColor = user ? getAppAccentColor(user.appAccentColor ?? accentColor) : '#ffffff';
     document.documentElement.style.setProperty('--accent', activeAccentColor);
-    document.documentElement.style.setProperty('--white', activeAccentColor);
+    document.documentElement.style.setProperty('--on-accent', getAccentContrast(activeAccentColor));
   }, [accentColor, user]);
 
   const updateAccentColor = async (color) => {
@@ -311,6 +308,84 @@ function useAuth() {
   return context;
 }
 
+function confirmAction({ title, message }) {
+  return window.confirm(`${title}\n\n${message}`);
+}
+
+function AcademyRoutePage() {
+  return (
+    <AppLayout>
+      <Suspense fallback={<div className="card state-card" role="status">Carregando academia…</div>}>
+        <AcademyPageModule confirm={confirmAction} PageHeader={PageHeader} />
+      </Suspense>
+    </AppLayout>
+  );
+}
+
+function HabitsRoutePage() {
+  const { user } = useAuth();
+  return (
+      <Suspense fallback={<div className="card state-card" role="status">Carregando hábitos…</div>}>
+        <HabitsPageModule confirm={confirmAction} userId={user?.id} accentColor={getAppAccentColor(user?.appAccentColor ?? user?.accentColor)} AppLayout={AppLayout} PageHeader={PageHeader} ApiState={ApiState} />
+      </Suspense>
+  );
+}
+
+function GoalsRoutePage() {
+  return (
+    <Suspense fallback={<div className="card state-card" role="status">Carregando metas…</div>}>
+      <GoalsPageModule AppLayout={AppLayout} PageHeader={PageHeader} ApiState={ApiState} />
+    </Suspense>
+  );
+}
+
+function ReadingRoutePage() {
+  const { user } = useAuth();
+  return (
+    <Suspense fallback={<div className="card state-card" role="status">Carregando leituras…</div>}>
+      <ReadingPageModule
+        confirm={confirmAction}
+        user={user}
+        AppLayout={AppLayout}
+        PageHeader={PageHeader}
+        ApiState={ApiState}
+        MetricCard={MetricCard}
+        formatReadingDuration={formatReadingDuration}
+        createFocusStatusSessionId={createFocusStatusSessionId}
+        READING_BOOK_PAGE_SIZE={50}
+        NumberInput={NumberInput}
+        ReadingBookCover={ReadingBookCover}
+      />
+    </Suspense>
+  );
+}
+
+function ProfileRoutePage({ embedded = false, onClose, onProfileUpdated: onProfileUpdatedProp }) {
+  const { user, setUser, updateAccentColor } = useAuth();
+  const navigate = useNavigate();
+  const onProfileUpdated = (username) => {
+    onProfileUpdatedProp?.(username);
+    if (embedded) return;
+    if (username) navigate(`/u/${encodeURIComponent(username)}`, { replace: true });
+  };
+  return (
+    <Suspense fallback={<div className="card state-card" role="status">Carregando perfil…</div>}>
+      <ProfilePageModule
+        embedded={embedded}
+        onClose={onClose}
+        user={user}
+        setUser={setUser}
+        updateAccentColor={updateAccentColor}
+        ProfileImageCropper={ProfileImageCropper}
+        ProfileBookPicker={ProfileBookPicker}
+        PageHeader={PageHeader}
+        AppLayout={AppLayout}
+        onProfileUpdated={onProfileUpdated}
+      />
+    </Suspense>
+  );
+}
+
 function RequireAuth({ children }) {
   const { user, isCheckingSession, hasCheckedSession, sessionError, ensureSession, retrySession } = useAuth();
   useEffect(() => {
@@ -327,13 +402,6 @@ function ApiState({ loading, error, empty, children }) {
   if (loading) return <div className="card state-card" role="status">Carregando dados…</div>;
   if (empty) return <div className="card state-card">{empty}</div>;
   return children;
-}
-
-const WEEKDAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-
-function formatFrequency(habit) {
-  if (habit.frequency === 'DAILY') return 'Todos os dias';
-  return (habit.daysOfWeek || []).map((day) => WEEKDAY_NAMES[day]).join(', ');
 }
 
 const featureCards = [
@@ -399,33 +467,53 @@ function AppSidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [logoutError, setLogoutError] = useState('');
-  const items = [
-    { label: 'Hoje', icon: LayoutDashboard, to: '/app' },
+  const overviewItems = [
+
+    { label: 'Amigos', icon: Users, to: '/app/amigos' },
+    { label: 'Análises', icon: BarChart3, to: '/app/analises' },
+  ];
+  const routineItems = [
+    { label: 'Academia', icon: Dumbbell, to: '/app/academia' },
     { label: 'Hábitos', icon: CheckCheck, to: '/app/habitos' },
     { label: 'Metas', icon: Target, to: '/app/metas' },
     { label: 'Leituras', icon: BookOpen, to: '/app/leituras' },
-    { label: 'Amigos', icon: Users, to: '/app/amigos' },
-    { label: 'Análises', icon: BarChart3, to: '/app/analises' },
-    { label: 'Configurações', icon: Settings, to: '/app/configuracoes' },
   ];
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" onClickCapture={(event) => navigateWithMotion(event, navigate)}>
       <div className="sidebar-top">
-        <Logo />
+        <Link className="sidebar-brand" to="/app" aria-label="Voltar à dashboard" title="Dashboard">
+          <span className="sidebar-brand-star" aria-hidden="true" />
+        </Link>
         <nav className="sidebar-nav" aria-label="Navegação da aplicação">
-          {items.map(({ label, icon: Icon, to }) => (
-            <NavLink key={label} to={to} className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
-              <Icon size={19} strokeWidth={1.8} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
+          <div className="sidebar-nav-group">
+            <span className="sidebar-group-label">Visão geral</span>
+            {overviewItems.map(({ label, icon: Icon, to }) => (
+              <NavLink key={label} end={to === '/app'} to={to} aria-label={label} title={label} className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                <Icon size={19} strokeWidth={1.8} />
+                <span className="sidebar-item-label">{label}</span>
+              </NavLink>
+            ))}
+          </div>
+          <div className="sidebar-nav-group">
+            <span className="sidebar-group-label">Rotina</span>
+            {routineItems.map(({ label, icon: Icon, to }) => (
+              <NavLink key={label} to={to} aria-label={label} title={label} className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                <Icon size={19} strokeWidth={1.8} />
+                <span className="sidebar-item-label">{label}</span>
+              </NavLink>
+            ))}
+          </div>
+          <NavLink to="/app/configuracoes" aria-label="Configurações" title="Configurações" className={({ isActive }) => `sidebar-item sidebar-settings-link ${isActive ? 'active' : ''}`}>
+            <Settings size={19} strokeWidth={1.8} />
+            <span className="sidebar-item-label">Configurações</span>
+          </NavLink>
         </nav>
       </div>
       <div className="sidebar-footer">
         <Link className="user-badge" to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/app/perfil'} aria-label={`Abrir perfil de ${user?.name || user?.email || 'usuário'}`}>
           <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <User size={16} />}</div>
-          <div>
+          <div className="user-badge-copy">
             <strong>{user?.name || user?.email}</strong>
             <small>{user?.username ? `@${user.username}` : user?.email}</small>
           </div>
@@ -439,14 +527,15 @@ function AppSidebar() {
           } catch (error) {
             setLogoutError(error.message);
           }
-        }}><LogOut size={16} /> Sair</button>
+        }} aria-label="Sair" title="Sair"><LogOut size={16} /><span className="sidebar-item-label">Sair</span></button>
       </div>
     </aside>
   );
 }
 
 function AppLayout({ children }) {
-  const { user } = useAuth();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
   return (
     <div className="app-shell">
       <AppSidebar />
@@ -454,16 +543,13 @@ function AppLayout({ children }) {
         <div className="mobile-topbar">
           <Logo />
         </div>
-        {children}
-        <nav className="mobile-nav" aria-label="Navegação móvel">
-          <NavLink end to="/app" aria-label="Hoje" title="Hoje" className="mobile-nav-item"><House size={19} strokeWidth={1.8} /><span>Hoje</span></NavLink>
+        <div key={pathname} className="app-page-motion">{children}</div>
+        <nav className="mobile-nav" aria-label="Navegação móvel" onClickCapture={(event) => navigateWithMotion(event, navigate)}>
           <NavLink to="/app/habitos" aria-label="Hábitos" title="Hábitos" className="mobile-nav-item"><CheckCheck size={19} strokeWidth={1.8} /><span>Hábitos</span></NavLink>
-          <NavLink to="/app/metas" aria-label="Metas" title="Metas" className="mobile-nav-item"><Target size={19} strokeWidth={1.8} /><span>Metas</span></NavLink>
+          <NavLink to="/app/academia" aria-label="Academia" title="Academia" className="mobile-nav-item"><Dumbbell size={19} strokeWidth={1.8} /><span>Academia</span></NavLink>
+          <NavLink end to="/app" aria-label="Início" title="Início" className="mobile-nav-item mobile-nav-home"><span className="sidebar-brand-star" aria-hidden="true" /></NavLink>
           <NavLink to="/app/leituras" aria-label="Leituras" title="Leituras" className="mobile-nav-item"><BookOpen size={19} strokeWidth={1.8} /><span>Leituras</span></NavLink>
-          <NavLink to="/app/amigos" aria-label="Amigos" title="Amigos" className="mobile-nav-item"><Users size={19} strokeWidth={1.8} /><span>Amigos</span></NavLink>
-          <NavLink to="/app/analises" aria-label="Análises" title="Análises" className="mobile-nav-item"><BarChart3 size={19} strokeWidth={1.8} /><span>Análises</span></NavLink>
-          <NavLink to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/app/perfil'} aria-label="Perfil" title="Perfil" className="mobile-nav-item"><User size={19} strokeWidth={1.8} /><span>Perfil</span></NavLink>
-          <NavLink to="/app/configuracoes" aria-label="Configurações" title="Configurações" className="mobile-nav-item"><Settings size={19} strokeWidth={1.8} /><span>Ajustes</span></NavLink>
+          <NavLink to="/app/metas" aria-label="Metas" title="Metas" className="mobile-nav-item"><Target size={19} strokeWidth={1.8} /><span>Metas</span></NavLink>
         </nav>
       </main>
     </div>
@@ -620,48 +706,20 @@ function FocusTimer() {
   );
 }
 
-function HabitCard({ habit, completedToday, scheduledToday, isBusy, onCheckIn, onEdit, onArchive, onDelete }) {
-  const Icon = habit.name.toLowerCase().includes('leitur') ? BookOpen
-    : habit.name.toLowerCase().includes('exerc') ? Flame
-      : Focus;
-  return (
-    <article className="habit-card card">
-      <div className="habit-main">
-        <div className="habit-icon"><Icon size={18} /></div>
-        <div>
-          <h3>{habit.name}</h3>
-          <small>{formatFrequency(habit)} · {habit.isActive ? 'Ativo' : 'Arquivado'}</small>
-          {habit.category ? <span className="habit-category"><Focus size={12} strokeWidth={2} />{habit.category}</span> : null}
-        </div>
-      </div>
-      <div className="habit-actions">
-        <button type="button" className="button button-secondary" disabled={isBusy || !habit.isActive || completedToday || !scheduledToday} onClick={() => onCheckIn(habit.id)}>
-          {completedToday ? 'Concluído hoje' : scheduledToday ? 'Marcar como feito' : 'Não programado hoje'}
-        </button>
-        <button type="button" className="text-button" disabled={isBusy} aria-label={`Editar ${habit.name}`} onClick={() => onEdit(habit)}><Pencil size={16} /></button>
-        <button type="button" className="text-button" disabled={isBusy} aria-label={habit.isActive ? `Arquivar ${habit.name}` : `Reativar ${habit.name}`} onClick={() => onArchive(habit)}>
-          {habit.isActive ? <MoreHorizontal size={16} /> : <Check size={16} />}
-        </button>
-        <button type="button" className="text-button" disabled={isBusy} aria-label={`Excluir ${habit.name}`} onClick={() => onDelete(habit)}><Trash2 size={16} /></button>
-      </div>
-    </article>
-  );
-}
-
 function ChartCard({ series, period }) {
   const max = Math.max(1, ...series.map((item) => item.completed));
   return (
     <article className="chart-card card">
       <div className="section-heading">
-        <h3>Hábitos concluídos por dia</h3>
+        <div><p className="eyebrow">Consistência</p><h3>Hábitos concluídos por dia</h3></div>
         <span className="metric-label">{period === 'week' ? 'Últimos 7 dias' : 'Últimos 30 dias'}</span>
       </div>
       {series.length ? (
-        <div className="chart-bars" aria-label="Gráfico de hábitos concluídos por dia">
+        <div key={period} className={`chart-bars activity-chart ${period === 'month' ? 'is-month' : ''}`} aria-label="Gráfico de hábitos concluídos por dia">
           {series.map((item) => (
             <div key={item.date} className="chart-column" title={`${item.date}: ${item.completed}/${item.scheduled}`}>
-              <div className="chart-bar-wrap"><span className="chart-bar" style={{ height: `${(item.completed / max) * 100}%` }} /></div>
-              <small>{new Date(`${item.date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' })}</small>
+              <span className="chart-value">{item.completed}</span><div className="chart-bar-wrap"><span className="chart-bar" style={{ height: `${(item.completed / max) * 100}%` }} /></div>
+              <small>{new Date(`${item.date}T12:00:00`).toLocaleDateString('pt-BR', period === 'week' ? { weekday: 'short' } : { day: '2-digit' })}</small>
             </div>
           ))}
         </div>
@@ -1176,6 +1234,8 @@ function PublicProfilePage() {
   const [isFriendActionBusy, setIsFriendActionBusy] = useState(false);
   const [isCustomizationOpen, setIsCustomizationOpen] = useState(false);
   const [profileRefreshError, setProfileRefreshError] = useState('');
+  const profileCustomizationDialogRef = useRef(null);
+  const profileCustomizationTriggerRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -1218,15 +1278,17 @@ function PublicProfilePage() {
 
   useEffect(() => {
     if (!isCustomizationOpen) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setIsCustomizationOpen(false);
-    };
+    const dialog = profileCustomizationDialogRef.current;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKeyDown);
+    const deactivateFocus = activateModalFocus(dialog, {
+      initialFocus: dialog.querySelector('[aria-label="Fechar personalização"]'),
+      fallbackFocus: () => profileCustomizationTriggerRef.current,
+      onEscape: () => setIsCustomizationOpen(false),
+    });
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
+      deactivateFocus();
     };
   }, [isCustomizationOpen]);
 
@@ -1266,7 +1328,7 @@ function PublicProfilePage() {
   const profileAccentColor = /^#[\da-f]{6}$/i.test(profile?.accentColor || '') ? profile.accentColor : '#ffffff';
 
   return (
-    <div className="public-page" style={{ '--accent': profileAccentColor, '--white': profileAccentColor }}>
+    <div className="public-page" style={{ '--accent': profileAccentColor, '--on-accent': getAccentContrast(profileAccentColor) }}>
       <PublicNavbar />
       <main className="container public-profile-main">
         {!currentResult ? <div className="card state-card" role="status">Carregando perfil…</div> : null}
@@ -1294,6 +1356,7 @@ function PublicProfilePage() {
                   <button
                     type="button"
                     className="public-profile-edit-button"
+                    ref={profileCustomizationTriggerRef}
                     aria-label="Editar personalização do perfil"
                     title="Editar perfil"
                     onClick={() => setIsCustomizationOpen(true)}
@@ -1399,11 +1462,11 @@ function PublicProfilePage() {
         <div className="profile-customization-backdrop" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setIsCustomizationOpen(false);
         }}>
-          <section className="profile-customization-panel" role="dialog" aria-modal="true" aria-labelledby="profile-customization-title">
-            <ProfilePage
-              key={user?.id || user?.username}
-              embedded
-              onClose={() => setIsCustomizationOpen(false)}
+          <section ref={profileCustomizationDialogRef} className="profile-customization-panel" role="dialog" aria-modal="true" aria-labelledby="profile-customization-title">
+              <ProfileRoutePage
+                key={user?.id || user?.username}
+                embedded
+                onClose={() => setIsCustomizationOpen(false)}
               onProfileUpdated={refreshPublicProfile}
             />
           </section>
@@ -1440,33 +1503,71 @@ function FriendPersonCard({ person, subtitle, actions, className = '' }) {
   );
 }
 
-function FriendsPage() {
+export function FriendsPage() {
   const navigate = useNavigate();
-  const [hub, setHub] = useState(null);
+  const [hub, setHub] = useState({ friends: [], incomingRequests: [], outgoingRequests: [], pagination: null });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadMoreError, setLoadMoreError] = useState('');
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [busyKey, setBusyKey] = useState('');
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
-    let active = true;
-    focuserApi.friends.list()
-      .then((result) => { if (active) setHub(result); })
-      .catch((requestError) => { if (active) setError(requestError.message); })
-      .finally(() => { if (active) setIsLoading(false); });
-    return () => { active = false; };
+    const requestId = ++requestIdRef.current;
+    focuserApi.friends.list({ limit: 20 })
+      .then((result) => {
+        if (requestId !== requestIdRef.current) return;
+        setHub(result);
+      })
+      .catch((requestError) => {
+        if (requestId !== requestIdRef.current) return;
+        setError(requestError.message);
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) setIsLoading(false);
+      });
+    return () => { requestIdRef.current += 1; };
   }, []);
+
+  const loadMoreFriends = async () => {
+    if (isLoadingMore || !hub.pagination?.hasMore) return;
+    const cursor = hub.pagination.nextCursor;
+    const requestId = ++requestIdRef.current;
+    setLoadMoreError('');
+    setIsLoadingMore(true);
+    try {
+      const result = await focuserApi.friends.list({ limit: 20, ...(cursor ? { cursor } : {}) });
+      if (requestId !== requestIdRef.current) return;
+      setHub((current) => ({
+        ...current,
+        friends: [...current.friends, ...result.friends],
+        incomingRequests: [...current.incomingRequests, ...result.incomingRequests],
+        outgoingRequests: [...current.outgoingRequests, ...result.outgoingRequests],
+        pagination: result.pagination,
+      }));
+    } catch (requestError) {
+      if (requestId === requestIdRef.current) setLoadMoreError(requestError.message);
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoadingMore(false);
+    }
+  };
 
   const performAction = async (key, action) => {
     if (busyKey) return;
+    const requestId = ++requestIdRef.current;
     setBusyKey(key);
     setError('');
     try {
       await action();
-      setHub(await focuserApi.friends.list());
+      const result = await focuserApi.friends.list({ limit: 20 });
+      if (requestId !== requestIdRef.current) return;
+      setHub(result);
+      setLoadMoreError('');
     } catch (requestError) {
-      setError(requestError.message);
+      if (requestId === requestIdRef.current) setError(requestError.message);
     } finally {
-      setBusyKey('');
+      if (requestId === requestIdRef.current) setBusyKey('');
     }
   };
 
@@ -1482,7 +1583,7 @@ function FriendsPage() {
       />
       {error ? <p className="error-text friends-error" role="alert">{error}</p> : null}
       {isLoading ? <div className="card state-card" role="status">Carregando sua central de amigos…</div> : null}
-      {!isLoading && !error && hub ? (
+      {!isLoading && !error ? (
         <div className="friends-hub">
           <section className="friends-section" aria-labelledby="incoming-friends-heading">
             <header className="friends-section-heading">
@@ -1552,6 +1653,14 @@ function FriendsPage() {
               </div>
             ) : <p className="card friends-empty muted-state">Você não enviou pedidos pendentes.</p>}
           </section>
+          {hub.pagination?.hasMore ? (
+            <div className="friends-load-more">
+              {loadMoreError ? <p role="alert" className="error-text">{loadMoreError}</p> : null}
+              <button type="button" className="button button-secondary" onClick={loadMoreFriends} disabled={isLoadingMore}>
+                {isLoadingMore ? 'Carregando…' : 'Carregar mais'}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </AppLayout>
@@ -1628,7 +1737,11 @@ function DashboardPage() {
 
   return (
     <AppLayout>
-      <PageHeader title={firstName ? `Olá, ${firstName}` : 'Olá'} eyebrow="Bem-vindo de volta" subtitle="Seu progresso e sua rotina de hoje." />
+      <PageHeader
+        title={firstName ? `Olá, ${firstName}` : 'Olá'}
+        eyebrow="Bem-vindo de volta"
+        subtitle="Seu progresso e sua rotina de hoje."
+      />
       <ApiState loading={isLoading || (!dashboard && !error)} error={error}>
         <section className="metrics-grid">
           {metrics.map((metric) => <MetricCard key={metric.label} {...metric} />)}
@@ -1638,209 +1751,15 @@ function DashboardPage() {
           <DashboardFriends />
         </section>
         <section className="card today-list">
-          <div className="section-heading"><h3>Hábitos de hoje</h3><span className="metric-label">{dashboard?.date}</span></div>
+          <div className="section-heading"><div><p className="eyebrow">Sua rotina</p><h3>Hábitos de hoje</h3></div><span className="summary-pill">{dashboard?.completed ?? 0} de {dashboard?.scheduled ?? 0} concluídos</span></div>
           {dashboard?.habits?.length ? dashboard.habits.map((habit) => (
-            <div className="today-habit" key={habit.id}>
-              <span>{habit.name}</span>
-              <span className={habit.completed ? 'completed-label' : 'pending-label'}>{habit.completed ? 'Concluído' : 'Pendente'}</span>
+            <div className={`today-habit routine-row${habit.completed ? ' is-complete' : ''}`} key={habit.id}>
+              <span className="routine-status-icon" aria-hidden="true">{habit.completed ? <Check size={17} /> : <Clock3 size={17} />}</span>
+              <span className="routine-name">{habit.name}</span>
+              <span className="routine-status">{habit.completed ? 'Concluído' : 'Pendente'}</span>
             </div>
           )) : <p className="muted-state">Nenhum hábito programado para hoje.</p>}
         </section>
-      </ApiState>
-    </AppLayout>
-  );
-}
-
-function HabitsPage() {
-  const [habits, setHabits] = useState([]);
-  const [completedIds, setCompletedIds] = useState(new Set());
-  const [scheduledIds, setScheduledIds] = useState(new Set());
-  const [showForm, setShowForm] = useState(false);
-  const [filter, setFilter] = useState('all');
-  const [form, setForm] = useState({ name: '', description: '', frequency: 'DAILY', daysOfWeek: [] });
-  const [isLoading, setIsLoading] = useState(true);
-  const [busyId, setBusyId] = useState('');
-  const [error, setError] = useState('');
-
-  const loadHabits = async () => {
-    setError('');
-    try {
-      const [habitResponse, dashboard] = await Promise.all([
-        focuserApi.habits.list({ status: 'all', limit: '100' }),
-        focuserApi.dashboard(),
-      ]);
-      setHabits(habitResponse.items);
-      setScheduledIds(new Set(dashboard.habits.map((habit) => habit.id)));
-      setCompletedIds(new Set(dashboard.habits.filter((habit) => habit.completed).map((habit) => habit.id)));
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      focuserApi.habits.list({ status: 'all', limit: '100' }),
-      focuserApi.dashboard(),
-    ])
-      .then(([habitResponse, dashboard]) => {
-        if (!active) return;
-        setHabits(habitResponse.items);
-        setScheduledIds(new Set(dashboard.habits.map((habit) => habit.id)));
-        setCompletedIds(new Set(dashboard.habits.filter((habit) => habit.completed).map((habit) => habit.id)));
-      })
-      .catch((requestError) => {
-        if (active) setError(requestError.message);
-      })
-      .finally(() => {
-        if (active) setIsLoading(false);
-      });
-    return () => { active = false; };
-  }, []);
-
-  const submitHabit = async (event) => {
-    event.preventDefault();
-    if (!form.name.trim() || busyId) return;
-    setBusyId('new');
-    setError('');
-    try {
-      await focuserApi.habits.create({
-        name: form.name.trim(),
-        ...(form.description.trim() ? { description: form.description.trim() } : {}),
-        frequency: form.frequency,
-        ...(form.frequency === 'CUSTOM' ? { daysOfWeek: form.daysOfWeek } : {}),
-      });
-      setForm({ name: '', description: '', frequency: 'DAILY', daysOfWeek: [] });
-      setShowForm(false);
-      await loadHabits();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const checkIn = async (id) => {
-    setBusyId(id);
-    setError('');
-    try {
-      await focuserApi.habits.checkIn(id);
-      await loadHabits();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const editHabit = async (habit) => {
-    const name = window.prompt('Nome do hábito', habit.name);
-    if (name === null || !name.trim() || name.trim() === habit.name) return;
-    setBusyId(habit.id);
-    setError('');
-    try {
-      await focuserApi.habits.update(habit.id, { name: name.trim() });
-      await loadHabits();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const archiveHabit = async (habit) => {
-    setBusyId(habit.id);
-    setError('');
-    try {
-      await focuserApi.habits.archive(habit.id, habit.isActive);
-      await loadHabits();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const deleteHabit = async (habit) => {
-    if (!window.confirm(`Excluir "${habit.name}" e todo o histórico de check-ins?`)) return;
-    setBusyId(habit.id);
-    setError('');
-    try {
-      await focuserApi.habits.remove(habit.id);
-      await loadHabits();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const visibleHabits = habits.filter((habit) => filter === 'all' || (filter === 'active' ? habit.isActive : !habit.isActive));
-
-  return (
-    <AppLayout>
-      <PageHeader title="Hábitos" subtitle="mantenha a consistência." action={<button type="button" className="button button-primary" onClick={() => setShowForm(!showForm)}><Plus size={16} /> Novo hábito</button>} />
-      <div className="filter-row">
-        <button type="button" className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>Todos</button>
-        <button type="button" className={`filter-chip ${filter === 'active' ? 'active' : ''}`} onClick={() => setFilter('active')}>Ativos</button>
-        <button type="button" className={`filter-chip ${filter === 'archived' ? 'active' : ''}`} onClick={() => setFilter('archived')}>Arquivados</button>
-      </div>
-      {error ? <div className="card error-state" role="alert">{error}</div> : null}
-      {showForm ? (
-        <form className="card habit-form" onSubmit={submitHabit}>
-          <h3>Novo hábito</h3>
-          <p className="muted-state">A categoria será definida automaticamente pelo Groq com base no nome e na descrição.</p>
-          <label>
-            <span>Nome</span>
-            <input type="text" maxLength="100" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Leitura diária" />
-          </label>
-          <label>
-            <span>Descrição <small>(opcional)</small></span>
-            <textarea maxLength="500" rows="2" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Adicione detalhes se quiser" />
-          </label>
-          <label>
-            <span>Frequência</span>
-            <select value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value, daysOfWeek: [] })}>
-              <option value="DAILY">Todos os dias</option>
-              <option value="CUSTOM">Dias selecionados</option>
-            </select>
-          </label>
-          {form.frequency === 'CUSTOM' ? (
-            <fieldset className="weekday-field">
-              <legend>Dias da semana</legend>
-              {WEEKDAY_NAMES.map((day, index) => (
-                <label key={day} className="weekday-option">
-                  <input type="checkbox" checked={form.daysOfWeek.includes(index)} onChange={(event) => setForm({
-                    ...form,
-                    daysOfWeek: event.target.checked ? [...form.daysOfWeek, index] : form.daysOfWeek.filter((value) => value !== index),
-                  })} />
-                  <span>{day}</span>
-                </label>
-              ))}
-            </fieldset>
-          ) : null}
-          <div className="inline-row">
-            <button type="button" className="button button-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-            <button type="submit" className="button button-primary" disabled={busyId === 'new' || (form.frequency === 'CUSTOM' && form.daysOfWeek.length === 0)}>{busyId === 'new' ? 'Definindo categoria…' : 'Salvar hábito'}</button>
-          </div>
-        </form>
-      ) : null}
-      <ApiState loading={isLoading} error={error} empty={visibleHabits.length === 0 ? 'Nenhum hábito encontrado nesta categoria. Crie seu primeiro hábito.' : null}>
-        <div className="habit-grid">
-          {visibleHabits.map((habit) => <HabitCard
-            key={habit.id}
-            habit={habit}
-            completedToday={completedIds.has(habit.id)}
-            scheduledToday={scheduledIds.has(habit.id)}
-            isBusy={busyId === habit.id}
-            onCheckIn={checkIn}
-            onEdit={editHabit}
-            onArchive={archiveHabit}
-            onDelete={deleteHabit}
-          />)}
-        </div>
       </ApiState>
     </AppLayout>
   );
@@ -1864,20 +1783,6 @@ function ReadingBookCover({ book }) {
       loading="lazy"
       onError={() => setHasCover(false)}
     />
-  );
-}
-
-function ReadingFeedCover({ book }) {
-  const coverSource = book.coverUrl || (book.coverId
-    ? `https://covers.openlibrary.org/b/id/${book.coverId}-S.jpg`
-    : null);
-  const [hasCover, setHasCover] = useState(Boolean(coverSource));
-  return (
-    <span className="reading-feed-cover">
-      {coverSource && hasCover
-        ? <img src={coverSource} alt="" loading="lazy" onError={() => setHasCover(false)} />
-        : <BookOpen size={18} aria-hidden="true" />}
-    </span>
   );
 }
 
@@ -1951,982 +1856,6 @@ function ProfileBookPicker({ id, title, description, books, value, onChange }) {
   );
 }
 
-function CoverOption({ book, selected, onSelect }) {
-  const [hasCover, setHasCover] = useState(true);
-  return (
-    <button
-      type="button"
-      className={`cover-option ${selected ? 'selected' : ''}`}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
-      {hasCover
-        ? <img src={book.coverUrl} alt={`Capa: ${book.title}`} loading="lazy" onError={() => setHasCover(false)} />
-        : <span className="cover-option-fallback" aria-hidden="true"><BookOpen size={24} /></span>}
-      <span className="cover-option-title">{book.title}</span>
-      <span className="cover-option-author">{book.author || 'Autor não informado'}{book.year ? ` · ${book.year}` : ''}</span>
-      <span className="cover-option-isbn">{book.isbn ? `ISBN ${book.isbn}` : 'ISBN indisponível'}</span>
-      <span className="cover-option-source">{book.source}</span>
-      {book.recommended ? <span className="cover-option-badge">Sugestão Groq</span> : null}
-      {selected ? <span className="cover-option-selected">Selecionada</span> : null}
-    </button>
-  );
-}
-
-function formatReadingTime(totalSeconds) {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
-}
-
-const READING_SOUNDS = [
-  { value: 'none', label: 'Silêncio', detail: 'Sem áudio', icon: VolumeX },
-  { value: 'rain', label: 'Chuva', detail: 'Chuva suave', icon: Waves },
-  { value: 'waves', label: 'Ondas', detail: 'Mar tranquilo', icon: Waves },
-];
-
-function ReadingSoundPicker({ value, onChange }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const pickerRef = useRef(null);
-  const selectedSound = READING_SOUNDS.find(({ value: sound }) => sound === value) || READING_SOUNDS[0];
-  const SelectedIcon = selectedSound.icon;
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    const closeOnOutsideClick = (event) => {
-      if (!pickerRef.current?.contains(event.target)) setIsOpen(false);
-    };
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [isOpen]);
-
-  return (
-    <div className="reading-sound-picker" ref={pickerRef}>
-      <button
-        type="button"
-        className="reading-sound-trigger"
-        aria-label={`Som ambiente: ${selectedSound.label}`}
-        title={`Som ambiente: ${selectedSound.label}`}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen((current) => !current)}
-      >
-        <span className="reading-sound-trigger-icon"><SelectedIcon size={18} /></span>
-        <span><small>Som ambiente</small><strong>{selectedSound.label}</strong></span>
-        <Headphones size={17} className="reading-sound-trigger-action" />
-      </button>
-      {isOpen ? (
-        <div className="reading-sound-popover" role="dialog" aria-label="Escolher som ambiente">
-          <div className="reading-sound-popover-heading"><strong>Escolha um som</strong><button type="button" className="text-button" aria-label="Fechar escolha de som" onClick={() => setIsOpen(false)}><X size={17} /></button></div>
-          <div className="reading-sound-options">
-            {READING_SOUNDS.map(({ value: sound, label, detail, icon: SoundIcon }) => (
-              <button
-                key={sound}
-                type="button"
-                className={`reading-sound-option ${value === sound ? 'selected' : ''}`}
-                aria-pressed={value === sound}
-                onClick={() => { onChange(sound); setIsOpen(false); }}
-              >
-                <SoundIcon size={18} />
-                <span><strong>{label}</strong><small>{detail}</small></span>
-                {value === sound ? <Check size={16} aria-hidden="true" /> : null}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ReadingLibrary() {
-  const { user } = useAuth();
-  const [books, setBooks] = useState([]);
-  const [today, setToday] = useState(null);
-  const [readingFeed, setReadingFeed] = useState([]);
-  const [isFeedLoading, setIsFeedLoading] = useState(true);
-  const [feedError, setFeedError] = useState('');
-  const [filter, setFilter] = useState('active');
-  const [showBookForm, setShowBookForm] = useState(false);
-  const [editingBook, setEditingBook] = useState(null);
-  const [sessionSetup, setSessionSetup] = useState(null);
-  const [readingSession, setReadingSession] = useState(null);
-  const [isFinishingSession, setIsFinishingSession] = useState(false);
-  const [sessionForm, setSessionForm] = useState({ pagesRead: '' });
-  const [sessionClock, setSessionClock] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [focusNotice, setFocusNotice] = useState('');
-  const [bookForm, setBookForm] = useState({ title: '', author: '', isbn: '', coverId: null, coverUrl: null, totalPages: '', currentPage: '0' });
-  const [coverOptions, setCoverOptions] = useState([]);
-  const [coverSources, setCoverSources] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false);
-  const [busyId, setBusyId] = useState('');
-  const [error, setError] = useState('');
-  const sessionPanelRef = useRef(null);
-  const ambientAudioRef = useRef(null);
-  const wakeLockRef = useRef(null);
-
-  const loadReadingFeed = useCallback(async () => {
-    setIsFeedLoading(true);
-    setFeedError('');
-    try {
-      const response = await focuserApi.reading.feed();
-      setReadingFeed(response.items);
-    } catch (requestError) {
-      setFeedError(requestError.message);
-    } finally {
-      setIsFeedLoading(false);
-    }
-  }, []);
-
-  const loadReading = useCallback(async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      const [booksResponse, todayResponse] = await Promise.all([
-        focuserApi.reading.listBooks({ status: filter, limit: '100' }),
-        focuserApi.reading.today(),
-      ]);
-      setBooks(booksResponse.items);
-      setToday(todayResponse);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    let active = true;
-    focuserApi.reading.feed()
-      .then((response) => {
-        if (active) setReadingFeed(response.items);
-      })
-      .catch((requestError) => {
-        if (active) setFeedError(requestError.message);
-      })
-      .finally(() => {
-        if (active) setIsFeedLoading(false);
-      });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      focuserApi.reading.listBooks({ status: filter, limit: '100' }),
-      focuserApi.reading.today(),
-    ])
-      .then(([booksResponse, todayResponse]) => {
-        if (!active) return;
-        setBooks(booksResponse.items);
-        setToday(todayResponse);
-      })
-      .catch((requestError) => { if (active) setError(requestError.message); })
-      .finally(() => { if (active) setIsLoading(false); });
-    return () => { active = false; };
-  }, [filter]);
-
-  useEffect(() => {
-    if (readingSession?.stage !== 'active' || !readingSession.startedAt) return undefined;
-    const interval = window.setInterval(() => {
-      const now = Date.now();
-      const elapsed = readingSession.elapsedSeconds + Math.floor((now - readingSession.startedAt) / 1000);
-      setSessionClock(now);
-      if (readingSession.durationSeconds && elapsed >= readingSession.durationSeconds) {
-        setReadingSession((current) => current?.stage === 'active'
-          ? { ...current, elapsedSeconds: current.durationSeconds, startedAt: null, timerExpired: true }
-          : current);
-      }
-    }, 250);
-    return () => window.clearInterval(interval);
-  }, [readingSession]);
-
-  const readingFocusSessionId = readingSession?.focusStatusSessionId;
-  const readingFocusBookId = readingSession?.book?.id;
-  const isReadingFocusActive = readingSession?.stage === 'active' && Boolean(readingSession.startedAt);
-
-  useEffect(() => {
-    const sessionId = readingFocusSessionId;
-    if (!sessionId) return undefined;
-    if (!isReadingFocusActive) {
-      focuserApi.reading.clearFocusStatus(sessionId)
-        .catch((requestError) => setFocusNotice(`Não foi possível atualizar o status de foco: ${requestError.message}`));
-      return undefined;
-    }
-
-    const updateFocusStatus = () => {
-      focuserApi.reading.setFocusStatus({ bookId: readingFocusBookId, sessionId })
-        .catch((requestError) => setFocusNotice(`Não foi possível atualizar o status de foco: ${requestError.message}`));
-    };
-    updateFocusStatus();
-    const interval = window.setInterval(updateFocusStatus, 30000);
-    return () => window.clearInterval(interval);
-  }, [readingFocusBookId, readingFocusSessionId, isReadingFocusActive]);
-
-  useEffect(() => {
-    if (readingSession?.stage !== 'active' || !readingSession.startedAt) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [readingSession?.stage, readingSession?.startedAt]);
-
-  useEffect(() => {
-    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === sessionPanelRef.current);
-    document.addEventListener('fullscreenchange', syncFullscreen);
-    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
-  }, []);
-
-  useEffect(() => {
-    if (readingSession?.stage !== 'active' || readingSession.startedAt || isFullscreen) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      sessionPanelRef.current?.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-        block: 'center',
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [readingSession?.stage, readingSession?.startedAt, isFullscreen]);
-
-  const stopAmbientAudio = () => {
-    const audio = ambientAudioRef.current;
-    ambientAudioRef.current = null;
-    if (!audio) return;
-    audio.source.stop();
-    audio.modulator?.stop();
-    audio.context.close();
-  };
-
-  const playAmbientAudio = (sound) => {
-    if (sound === 'none') return;
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) {
-      setFocusNotice('Seu navegador não oferece suporte ao áudio ambiente.');
-      return;
-    }
-    try {
-      const context = new AudioContextClass();
-      const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
-      const channel = buffer.getChannelData(0);
-      for (let index = 0; index < channel.length; index += 1) channel[index] = Math.random() * 2 - 1;
-      const source = context.createBufferSource();
-      const filterNode = context.createBiquadFilter();
-      const volume = context.createGain();
-      const modulator = sound === 'waves' ? context.createOscillator() : null;
-      const modulationDepth = sound === 'waves' ? context.createGain() : null;
-      source.buffer = buffer;
-      source.loop = true;
-      filterNode.type = sound === 'waves' ? 'lowpass' : 'bandpass';
-      filterNode.frequency.value = sound === 'waves' ? 420 : 1150;
-      filterNode.Q.value = 0.45;
-      volume.gain.value = 0.025;
-      if (modulator && modulationDepth) {
-        modulator.frequency.value = 0.12;
-        modulationDepth.gain.value = 0.012;
-        modulator.connect(modulationDepth);
-        modulationDepth.connect(volume.gain);
-        modulator.start();
-      }
-      source.connect(filterNode);
-      filterNode.connect(volume);
-      volume.connect(context.destination);
-      source.start();
-      ambientAudioRef.current = { context, source, modulator };
-      context.resume().catch(() => setFocusNotice('Não foi possível iniciar o áudio. Verifique as permissões de som do navegador.'));
-    } catch {
-      setFocusNotice('Não foi possível iniciar o áudio ambiente neste navegador.');
-    }
-  };
-
-  useEffect(() => {
-    if (readingSession?.stage === 'active') return undefined;
-    stopAmbientAudio();
-    if (wakeLockRef.current) {
-      wakeLockRef.current.release();
-      wakeLockRef.current = null;
-    }
-    if (sessionPanelRef.current && document.fullscreenElement === sessionPanelRef.current) {
-      document.exitFullscreen().catch(() => setFocusNotice('Não foi possível fechar a tela cheia automaticamente.'));
-    }
-    return undefined;
-  }, [readingSession?.stage]);
-
-  useEffect(() => () => {
-    stopAmbientAudio();
-    if (wakeLockRef.current) wakeLockRef.current.release();
-  }, []);
-
-  const openBookForm = (book = null) => {
-    setEditingBook(book);
-    setCoverOptions([]);
-    setCoverSources(null);
-    setBookForm(book
-      ? { title: book.title, author: book.author || '', isbn: book.isbn || '', coverId: book.coverId || null, coverUrl: book.coverUrl || null, totalPages: String(book.totalPages), currentPage: String(book.currentPage) }
-      : { title: '', author: '', isbn: '', coverId: null, coverUrl: null, totalPages: '', currentPage: '0' });
-    setShowBookForm(true);
-    setError('');
-  };
-
-  const saveBook = async (event) => {
-    event.preventDefault();
-    const id = editingBook?.id || 'new-book';
-    setBusyId(id);
-    setError('');
-    const data = {
-      title: bookForm.title.trim(),
-      author: bookForm.author.trim() || null,
-      isbn: bookForm.isbn.trim() || null,
-      coverId: bookForm.coverId,
-      coverUrl: bookForm.coverUrl,
-      totalPages: Number(bookForm.totalPages),
-      currentPage: Number(bookForm.currentPage),
-    };
-    try {
-      if (editingBook) await focuserApi.reading.updateBook(editingBook.id, data);
-      else await focuserApi.reading.createBook(data);
-      setShowBookForm(false);
-      setEditingBook(null);
-      await loadReading();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const lookupIsbn = async () => {
-    const title = bookForm.title.trim();
-    if (!title || isLookingUpIsbn) return;
-    setIsLookingUpIsbn(true);
-    setError('');
-    setCoverOptions([]);
-    setCoverSources(null);
-    try {
-      const result = await focuserApi.reading.lookupIsbn({
-        title,
-        ...(bookForm.author.trim() ? { author: bookForm.author.trim() } : {}),
-      });
-      setCoverOptions(result.items);
-      setCoverSources(result.sources);
-      if (result.items.length === 0) setError('Não encontrei capas disponíveis para esse livro.');
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsLookingUpIsbn(false);
-    }
-  };
-
-  const selectCover = (edition) => {
-    setBookForm((current) => ({
-      ...current,
-      isbn: edition.isbn || '',
-      coverId: edition.coverId,
-      coverUrl: edition.coverUrl,
-      author: current.author.trim() || edition.author || '',
-    }));
-    setError('');
-  };
-
-  const startReadingSession = async (event) => {
-    event.preventDefault();
-    if (!sessionSetup) return;
-    const fullscreenRequest = sessionPanelRef.current?.requestFullscreen
-      ? sessionPanelRef.current.requestFullscreen().catch(() => {
-        setFocusNotice('Não foi possível abrir a tela cheia. O modo foco continua disponível nesta página.');
-      })
-      : Promise.resolve().then(() => {
-        setFocusNotice('A tela cheia não é compatível com este navegador; você ainda pode manter a sessão aberta.');
-      });
-    setFocusNotice('');
-    const durationSeconds = sessionSetup.mode === 'free' ? null : Number(sessionSetup.minutes) * 60;
-    const startedAt = Date.now();
-    setSessionClock(startedAt);
-    setReadingSession({
-      book: sessionSetup.book,
-      focusStatusSessionId: createFocusStatusSessionId(),
-      stage: 'active',
-      durationSeconds,
-      elapsedSeconds: 0,
-      startedAt,
-      sound: 'none',
-      timerExpired: false,
-    });
-    setSessionSetup(null);
-    if ('wakeLock' in navigator) {
-      try {
-        wakeLockRef.current = await navigator.wakeLock.request('screen');
-      } catch {
-        setFocusNotice('O navegador não conseguiu manter a tela ligada. Ajuste o bloqueio automático do aparelho durante a leitura.');
-      }
-    }
-    await fullscreenRequest;
-  };
-
-  const closeSessionSetup = () => {
-    setSessionSetup(null);
-    setFocusNotice('');
-  };
-
-  const pauseReadingSession = () => {
-    setReadingSession((current) => {
-      if (!current || current.stage !== 'active' || !current.startedAt) return current;
-      return {
-        ...current,
-        elapsedSeconds: current.elapsedSeconds + Math.floor((Date.now() - current.startedAt) / 1000),
-        startedAt: null,
-      };
-    });
-  };
-
-  const resumeReadingSession = () => {
-    if (readingSession?.timerExpired) return;
-    setSessionClock(Date.now());
-    setReadingSession((current) => current?.stage === 'active' && !current.startedAt
-      ? { ...current, focusStatusSessionId: createFocusStatusSessionId(), startedAt: Date.now() }
-      : current);
-  };
-
-  const finishReadingSession = () => {
-    setReadingSession((current) => {
-      if (!current || current.stage !== 'active') return current;
-      const elapsedSeconds = current.elapsedSeconds + (current.startedAt
-        ? Math.floor((Date.now() - current.startedAt) / 1000)
-        : 0);
-      return { ...current, stage: 'complete', elapsedSeconds, startedAt: null };
-    });
-    setIsFinishingSession(true);
-    setError('');
-  };
-
-  const resumeSessionAfterFinish = () => {
-    setReadingSession((current) => current
-      ? { ...current, stage: 'active', startedAt: null }
-      : current);
-    setIsFinishingSession(false);
-    setError('');
-  };
-
-  const changeReadingSound = (sound) => {
-    if (!readingSession || readingSession.stage !== 'active') return;
-    stopAmbientAudio();
-    setFocusNotice('');
-    if (sound !== 'none') playAmbientAudio(sound);
-    setReadingSession((current) => current ? { ...current, sound } : current);
-  };
-
-  const toggleFullscreen = async () => {
-    if (document.fullscreenElement === sessionPanelRef.current) {
-      await document.exitFullscreen();
-      return;
-    }
-    if (!sessionPanelRef.current?.requestFullscreen) {
-      setFocusNotice('A tela cheia não é compatível com este navegador.');
-      return;
-    }
-    try {
-      await sessionPanelRef.current.requestFullscreen();
-      setFocusNotice('');
-    } catch {
-      setFocusNotice('Não foi possível abrir a tela cheia neste navegador.');
-    }
-  };
-
-  const saveReadingLog = async (event) => {
-    event.preventDefault();
-    if (!readingSession) return;
-    const pagesRead = Number(sessionForm.pagesRead);
-    const maxPages = Math.min(10000, readingSession.book.totalPages - readingSession.book.currentPage);
-    if (!Number.isInteger(pagesRead) || pagesRead < 1 || pagesRead > maxPages) {
-      setError(`Informe páginas entre 1 e ${maxPages} antes de finalizar a sessão.`);
-      return;
-    }
-    const elapsedSeconds = readingSession.elapsedSeconds + (readingSession.stage === 'active' && readingSession.startedAt
-      ? Math.floor((Date.now() - readingSession.startedAt) / 1000)
-      : 0);
-    setBusyId(readingSession.book.id);
-    setError('');
-    try {
-      await focuserApi.reading.logSession(readingSession.book.id, {
-        pagesRead,
-        minutesRead: Math.max(1, Math.ceil(elapsedSeconds / 60)),
-      });
-      setReadingSession(null);
-      setIsFinishingSession(false);
-      setSessionForm({ pagesRead: '' });
-      setFocusNotice('');
-      await Promise.all([loadReading(), loadReadingFeed()]);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const elapsedReadingSeconds = readingSession
-    ? readingSession.elapsedSeconds + (readingSession.stage === 'active' && readingSession.startedAt
-      ? Math.floor((sessionClock - readingSession.startedAt) / 1000)
-      : 0)
-    : 0;
-
-  const updateSessionPages = (value) => {
-    setSessionForm({ pagesRead: value });
-    setError('');
-  };
-
-  const toggleArchive = async (book) => {
-    setBusyId(book.id);
-    setError('');
-    try {
-      await focuserApi.reading.updateBook(book.id, { isActive: !book.isActive });
-      await loadReading();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const removeBook = async (book) => {
-    if (!window.confirm(`Excluir "${book.title}" e seu histórico de leitura?`)) return;
-    setBusyId(book.id);
-    setError('');
-    try {
-      await focuserApi.reading.removeBook(book.id);
-      await loadReading();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  return (
-    <AppLayout>
-      <section className="reading-library">
-        <PageHeader
-          title="Leituras"
-          subtitle="acompanhe os livros e registre seu ritmo diário."
-          action={<button type="button" className="button button-primary" onClick={() => openBookForm()}><Plus size={17} /> Adicionar livro</button>}
-        />
-      <section className="metrics-grid reading-metrics" aria-label="Resumo de leitura de hoje">
-        <MetricCard label="Páginas hoje" value={today?.totalPages ?? '—'} hint="Lidas hoje" icon={BookOpen} />
-        <MetricCard label="Tempo hoje" value={`${today?.totalMinutes ?? '—'} min`} hint="Minutos de leitura" icon={Clock3} />
-        <MetricCard label="Livros na lista" value={books.length} hint={filter === 'active' ? 'Em leitura' : 'Nesta categoria'} icon={BookOpen} />
-      </section>
-      <section className="reading-feed-section" aria-labelledby="reading-feed-title">
-        <div className="reading-feed-heading">
-          <div className="reading-feed-title-group">
-            <span className="reading-feed-community-icon"><Users size={20} aria-hidden="true" /></span>
-            <div>
-              <p className="eyebrow">seu círculo de leitura</p>
-              <h2 id="reading-feed-title">Comunidade</h2>
-              <p className="muted-state">Um pouco do que você e seus amigos estão lendo.</p>
-            </div>
-          </div>
-          <div className="reading-feed-heading-actions">
-            {!isFeedLoading && !feedError && readingFeed.length ? <span className="reading-feed-count">{readingFeed.length} recentes</span> : null}
-            <button type="button" className="button button-secondary reading-feed-refresh" onClick={loadReadingFeed} disabled={isFeedLoading}>
-              <Activity size={15} aria-hidden="true" />{isFeedLoading ? 'Atualizando…' : 'Atualizar'}
-            </button>
-          </div>
-        </div>
-        {feedError ? (
-          <div className="reading-feed-state reading-feed-error" role="alert">
-            <span className="reading-feed-state-icon"><Activity size={19} aria-hidden="true" /></span>
-            <div>
-              <strong>O feed não carregou</strong>
-              <p>{feedError}</p>
-            </div>
-            <button type="button" className="button button-secondary" onClick={loadReadingFeed} disabled={isFeedLoading}>Tentar novamente</button>
-          </div>
-        ) : isFeedLoading ? (
-          <div className="reading-feed-skeleton-list" role="status" aria-label="Carregando leituras recentes">
-            {[0, 1, 2].map((item) => (
-              <div className="reading-feed-skeleton" key={item} aria-hidden="true">
-                <span className="reading-feed-skeleton-avatar" />
-                <span className="reading-feed-skeleton-content">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="reading-feed-skeleton-stats"><i /><i /></span>
-              </div>
-            ))}
-          </div>
-        ) : readingFeed.length ? (
-          <ol className="reading-feed-list">
-            {readingFeed.map((entry) => (
-              <li className="reading-feed-item" key={entry.id}>
-                <Link className="reading-feed-reader" to={`/u/${encodeURIComponent(entry.user.username)}`} aria-label={`Ver perfil de ${entry.user.name}`}>
-                  {entry.user.avatarUrl
-                    ? <img src={entry.user.avatarUrl} alt="" loading="lazy" />
-                    : <User size={19} aria-hidden="true" />}
-                </Link>
-                <div className="reading-feed-content">
-                  <div className="reading-feed-person">
-                    <Link to={`/u/${encodeURIComponent(entry.user.username)}`}>{entry.user.id === user?.id ? 'Você' : entry.user.name}</Link>
-                    <span>registrou uma leitura</span>
-                    <time dateTime={entry.loggedAt}>{new Date(entry.loggedAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</time>
-                  </div>
-                  <div className="reading-feed-book">
-                    <ReadingFeedCover book={entry.book} />
-                    <span className="reading-feed-book-info">
-                      <strong>{entry.book.title}</strong>
-                      {entry.book.author ? <small>{entry.book.author}</small> : null}
-                    </span>
-                  </div>
-                </div>
-                <div className="reading-feed-stats">
-                  <span className="reading-feed-pages">{entry.pagesRead} pág.</span>
-                  <span className="reading-feed-duration"><Clock3 size={14} aria-hidden="true" />{formatReadingDuration(entry.minutesRead)}</span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="reading-feed-state reading-feed-empty">
-            <span className="reading-feed-state-icon"><BookOpen size={22} aria-hidden="true" /></span>
-            <div>
-              <strong>Seu círculo ainda está em silêncio</strong>
-              <p>Quando você ou seus amigos registrarem uma leitura, ela aparecerá aqui.</p>
-            </div>
-            <Link className="button button-secondary" to="/app/amigos"><Users size={16} aria-hidden="true" />Ver amigos</Link>
-          </div>
-        )}
-      </section>
-      <div className="filter-row" role="group" aria-label="Filtrar livros">
-        {[['active', 'Lendo'], ['archived', 'Finalizados/arquivados'], ['all', 'Todos']].map(([value, label]) => (
-          <button key={value} type="button" className={`filter-chip ${filter === value ? 'active' : ''}`} onClick={() => { setIsLoading(true); setError(''); setFilter(value); }}>{label}</button>
-        ))}
-      </div>
-      {error && !showBookForm && !sessionSetup && !readingSession ? <div className="card state-card error-state" role="alert">{error}</div> : null}
-      {sessionSetup || readingSession ? (
-        <section className={`reading-session card ${readingSession?.stage === 'active' ? 'reading-session-focus' : ''} ${readingSession?.stage === 'active' && !readingSession.startedAt ? 'reading-session-paused' : ''}`} ref={sessionPanelRef} aria-label="Sessão de leitura">
-          {sessionSetup ? (
-            <form onSubmit={startReadingSession}>
-              <div className="reading-session-header">
-                <div><p className="eyebrow">Sessão de leitura</p><h2>{sessionSetup.book.title}</h2><p>{sessionSetup.book.author || 'Escolha um tempo e comece a ler no seu ritmo.'}</p></div>
-                <button type="button" className="text-button" aria-label="Fechar configuração" onClick={closeSessionSetup}><X size={20} /></button>
-              </div>
-              <div className="reading-session-options">
-                <fieldset className="session-choice">
-                  <legend>Quanto tempo você quer ler?</legend>
-                  <div className="session-choice-buttons">
-                    <button type="button" className={`filter-chip ${sessionSetup.mode === 'timed' ? 'active' : ''}`} aria-pressed={sessionSetup.mode === 'timed'} onClick={() => setSessionSetup({ ...sessionSetup, mode: 'timed' })}>Definir tempo</button>
-                    <button type="button" className={`filter-chip ${sessionSetup.mode === 'free' ? 'active' : ''}`} aria-pressed={sessionSetup.mode === 'free'} onClick={() => setSessionSetup({ ...sessionSetup, mode: 'free' })}>Leitura livre</button>
-                  </div>
-                </fieldset>
-                {sessionSetup.mode === 'timed' ? (
-                  <div className="session-duration">
-                    <div className="session-choice-buttons" role="group" aria-label="Tempos sugeridos">
-                      {[15, 25, 45].map((minutes) => <button key={minutes} type="button" className={`filter-chip ${Number(sessionSetup.minutes) === minutes ? 'active' : ''}`} aria-pressed={Number(sessionSetup.minutes) === minutes} onClick={() => setSessionSetup({ ...sessionSetup, minutes: String(minutes) })}>{minutes} min</button>)}
-                    </div>
-                    <label><span>Ou escolha os minutos (1 a 1440)</span><input required type="number" min="1" max="1440" step="1" value={sessionSetup.minutes} onChange={(event) => setSessionSetup({ ...sessionSetup, minutes: event.target.value })} /></label>
-                  </div>
-                ) : <p className="muted-state">Leia sem contagem regressiva; encerre quando quiser.</p>}
-              </div>
-              <p className="session-device-note">O modo foco abre em tela cheia e tenta manter a tela ligada. Por segurança, sites não podem ativar o “Não Perturbe” automaticamente; ative-o manualmente pelos ajustes rápidos do Android ou pela Central de Controle do iPhone.</p>
-              <div className="inline-row"><button type="button" className="button button-secondary" onClick={closeSessionSetup}>Cancelar</button><button type="submit" className="button button-primary"><Focus size={17} /> Começar leitura</button></div>
-            </form>
-          ) : readingSession.stage === 'active' ? (
-            <form onSubmit={saveReadingLog}>
-              <div className="focus-topbar">
-                <span className="focus-status">{readingSession.startedAt ? 'LEITURA EM FOCO' : 'LEITURA PAUSADA'}</span>
-                <button type="button" className="focus-fullscreen-button" onClick={toggleFullscreen} aria-label={isFullscreen ? 'Sair da tela cheia' : 'Ativar tela cheia'} title={isFullscreen ? 'Sair da tela cheia' : 'Ativar tela cheia'}>{isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}</button>
-              </div>
-              <div className="focus-book">
-                <h2>{readingSession.book.title}</h2>
-                {readingSession.book.author ? <p>{readingSession.book.author}</p> : null}
-              </div>
-              <div className="focus-timer-panel">
-                <div className="reading-session-clock" role="timer" aria-live="off">{formatReadingTime(readingSession.durationSeconds ? Math.max(0, readingSession.durationSeconds - elapsedReadingSeconds) : elapsedReadingSeconds)}</div>
-                <span>{readingSession.durationSeconds ? `de ${formatReadingTime(readingSession.durationSeconds)}` : 'tempo de leitura'}</span>
-              </div>
-              <div className="focus-controls-row">
-                {readingSession.timerExpired
-                  ? <p className="focus-time-finished" role="status">Seu tempo acabou. Informe as páginas para finalizar.</p>
-                  : !readingSession.startedAt
-                  ? <button type="button" className="button button-primary" onClick={resumeReadingSession}><Play size={17} /> Continuar</button>
-                  : <button type="button" className="button button-primary" onClick={pauseReadingSession}><Pause size={17} /> Pausar</button>}
-                <ReadingSoundPicker value={readingSession.sound} onChange={changeReadingSound} />
-                <button type="button" className="focus-finish-button" onClick={finishReadingSession}><Check size={17} strokeWidth={2} /> Finalizar sessão</button>
-              </div>
-              {focusNotice ? <p className="session-notice" role="status">{focusNotice}</p> : null}
-            </form>
-          ) : (
-            isFinishingSession ? (
-              <div className="session-finish-backdrop">
-                <form className="session-finish-dialog" role="dialog" aria-modal="true" aria-labelledby="session-finish-title" onSubmit={saveReadingLog}>
-                  <div className="session-finish-icon"><BookOpen size={22} /></div>
-                  <p className="eyebrow">SESSÃO CONCLUÍDA · {formatReadingTime(readingSession.elapsedSeconds)}</p>
-                  <h2 id="session-finish-title">Quantas páginas você leu?</h2>
-                  <p className="session-finish-book">{readingSession.book.title}</p>
-                  <label className="session-pages"><span>Páginas lidas</span><input autoFocus required type="number" min="1" max={Math.min(10000, readingSession.book.totalPages - readingSession.book.currentPage)} step="1" value={sessionForm.pagesRead} onChange={(event) => updateSessionPages(event.target.value)} placeholder="Ex.: 12" /></label>
-                  {error ? <p className="error-text" role="alert">{error}</p> : null}
-                  <div className="session-finish-actions">
-                    <button type="button" className="button button-secondary" onClick={resumeSessionAfterFinish}>Voltar à leitura</button>
-                    <button type="submit" className="button button-primary" disabled={Boolean(busyId) || !sessionForm.pagesRead}>{busyId ? 'Salvando…' : 'Salvar leitura'}</button>
-                  </div>
-                </form>
-              </div>
-            ) : null
-          )}
-        </section>
-      ) : null}
-      {showBookForm ? (
-        <form className="goal-form card" onSubmit={saveBook}>
-          <h3>{editingBook ? 'Editar livro' : 'Adicionar livro'}</h3>
-          <div className="goal-form-grid">
-            <label><span>Livro</span><input required maxLength={160} value={bookForm.title} onChange={(event) => { setBookForm({ ...bookForm, title: event.target.value, isbn: '', coverId: null, coverUrl: null }); setCoverOptions([]); setCoverSources(null); }} placeholder="Título do livro" /></label>
-            <label><span>Autor(a)</span><input maxLength={120} value={bookForm.author} onChange={(event) => { setBookForm({ ...bookForm, author: event.target.value, isbn: '', coverId: null, coverUrl: null }); setCoverOptions([]); setCoverSources(null); }} placeholder="Nome do autor" /></label>
-            <label className="isbn-field"><span>ISBN da edição selecionada</span><div className="isbn-input-row"><input maxLength={20} value={bookForm.isbn} onChange={(event) => setBookForm({ ...bookForm, isbn: event.target.value, coverId: null, coverUrl: null })} placeholder="Escolha uma capa ou informe o ISBN" /><button type="button" className="button button-secondary isbn-lookup-button" onClick={lookupIsbn} disabled={!bookForm.title.trim() || isLookingUpIsbn}>{isLookingUpIsbn ? 'Buscando…' : <><Search size={16} /> Buscar capas</>}</button></div></label>
-            <label><span>Total de páginas</span><input required type="number" min="1" max="100000" step="1" value={bookForm.totalPages} onChange={(event) => setBookForm({ ...bookForm, totalPages: event.target.value })} /></label>
-            <label><span>Página atual</span><input required type="number" min="0" max={bookForm.totalPages || 100000} step="1" value={bookForm.currentPage} onChange={(event) => setBookForm({ ...bookForm, currentPage: event.target.value })} /></label>
-          </div>
-          <p className="muted-state">Busque as edições disponíveis e escolha a capa. O Groq sugere uma correspondência quando possível.</p>
-          {coverOptions.length ? (
-            <section className="cover-picker" aria-label="Escolha uma capa">
-              <h4>Capas encontradas · {coverOptions.length}</h4>
-              {coverSources && !coverSources.googleBooks ? (
-                <p className="muted-state" role="status">Google Books está indisponível no momento; exibindo resultados do Open Library. Configure uma chave própria em <code>GOOGLE_BOOKS_API_KEY</code> para usar sua quota.</p>
-              ) : null}
-              <div className="cover-options-grid">
-                {coverOptions.map((edition, index) => (
-                  <CoverOption
-                    key={`${edition.source}-${edition.coverId || edition.coverUrl}-${index}`}
-                    book={edition}
-                    selected={bookForm.coverUrl === edition.coverUrl}
-                    onSelect={() => selectCover(edition)}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-          {error ? <p className="error-text" role="alert">{error}</p> : null}
-          <div className="inline-row">
-            <button type="button" className="button button-secondary" onClick={() => setShowBookForm(false)}>Cancelar</button>
-            <button type="submit" className="button button-primary" disabled={Boolean(busyId)}>{busyId ? 'Salvando…' : 'Salvar livro'}</button>
-          </div>
-        </form>
-      ) : null}
-      <ApiState loading={isLoading} error={error && !showBookForm && !sessionSetup && !readingSession ? error : ''} empty={books.length === 0 ? 'Nenhum livro nesta lista. Adicione o livro que está lendo.' : null}>
-        <div className="reading-book-grid">
-          {books.map((book) => {
-            const progress = Math.min(100, (book.currentPage / book.totalPages) * 100);
-            return (
-              <article className="reading-book-card card" key={book.id}>
-                <ReadingBookCover key={`${book.id}-${book.coverId || book.isbn || 'none'}`} book={book} />
-                <div className="reading-book-content">
-                  <div className="reading-book-heading"><div><h3>{book.title}</h3><small>{book.author || 'Autor não informado'}</small></div><span className="status-pill">{book.isActive ? 'Lendo' : 'Arquivado'}</span></div>
-                  <p className="reading-pages">{book.currentPage} / {book.totalPages} páginas</p>
-                  <div className="progress-bar" role="progressbar" aria-label={`Leitura de ${book.title}`} aria-valuenow={Math.round(progress)} aria-valuemin="0" aria-valuemax="100"><span style={{ width: `${progress}%` }} /></div>
-                  <div className="goal-actions">
-                    <button type="button" className="button button-secondary" disabled={!book.isActive || book.currentPage >= book.totalPages || busyId === book.id} onClick={() => { setSessionSetup({ book, mode: 'timed', minutes: '25', sound: 'none' }); setSessionForm({ pagesRead: '' }); setError(''); setFocusNotice(''); }}>Começar leitura</button>
-                    <button type="button" className="text-button" disabled={busyId === book.id} aria-label={`Editar ${book.title}`} onClick={() => openBookForm(book)}><Pencil size={16} /></button>
-                    <button type="button" className="text-button" disabled={busyId === book.id} aria-label={book.isActive ? `Arquivar ${book.title}` : `Reativar ${book.title}`} onClick={() => toggleArchive(book)}>{book.isActive ? <MoreHorizontal size={16} /> : <Check size={16} />}</button>
-                    <button type="button" className="text-button" disabled={busyId === book.id} aria-label={`Excluir ${book.title}`} onClick={() => removeBook(book)}><Trash2 size={16} /></button>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </ApiState>
-      {today?.items?.length ? (
-        <section className="card today-list">
-          <div className="section-heading"><h3>Leituras de hoje</h3><span className="metric-label">{today.date}</span></div>
-          {today.items.map((log) => (
-            <div className="today-habit" key={log.id}>
-              <span>{log.book.title}</span>
-              <span>{log.pagesRead} pág. · {log.minutesRead} min</span>
-            </div>
-          ))}
-        </section>
-      ) : null}
-      </section>
-    </AppLayout>
-  );
-}
-
-function GoalsPage() {
-  const [goals, setGoals] = useState([]);
-  const [filter, setFilter] = useState('active');
-  const [form, setForm] = useState({ name: '', description: '', category: '', targetValue: '', currentValue: '0', unit: '', period: 'MONTHLY' });
-  const [editingGoal, setEditingGoal] = useState(null);
-  const [showForm, setShowForm] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [busyId, setBusyId] = useState('');
-  const [error, setError] = useState('');
-
-  const loadGoals = useCallback(async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      const response = await focuserApi.goals.list({ status: filter, limit: '100' });
-      setGoals(response.items);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    let active = true;
-    focuserApi.goals.list({ status: filter, limit: '100' })
-      .then((response) => { if (active) setGoals(response.items); })
-      .catch((requestError) => { if (active) setError(requestError.message); })
-      .finally(() => { if (active) setIsLoading(false); });
-    return () => { active = false; };
-  }, [filter]);
-
-  const openCreateForm = () => {
-    setEditingGoal(null);
-    setForm({ name: '', description: '', category: '', targetValue: '', currentValue: '0', unit: '', period: 'MONTHLY' });
-    setShowForm(true);
-  };
-
-  const editGoal = (goal) => {
-    setEditingGoal(goal);
-    setForm({
-      name: goal.name, description: goal.description || '', category: goal.category || '',
-      targetValue: String(goal.targetValue), currentValue: String(goal.currentValue),
-      unit: goal.unit, period: goal.period,
-    });
-    setShowForm(true);
-  };
-
-  const saveGoal = async (event) => {
-    event.preventDefault();
-    const id = editingGoal?.id || 'new';
-    setBusyId(id);
-    setError('');
-    const data = {
-      name: form.name.trim(),
-      description: form.description.trim() || null,
-      category: form.category.trim() || null,
-      targetValue: Number(form.targetValue),
-      unit: form.unit.trim(),
-      period: form.period,
-      ...(editingGoal ? { currentValue: Number(form.currentValue) } : {}),
-    };
-    try {
-      if (editingGoal) await focuserApi.goals.update(editingGoal.id, data);
-      else await focuserApi.goals.create(data);
-      setShowForm(false);
-      setEditingGoal(null);
-      await loadGoals();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const addProgress = async (goal) => {
-    setBusyId(goal.id);
-    setError('');
-    try {
-      await focuserApi.goals.addProgress(goal.id, 1);
-      await loadGoals();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const toggleArchive = async (goal) => {
-    setBusyId(goal.id);
-    setError('');
-    try {
-      await focuserApi.goals.update(goal.id, { isActive: !goal.isActive });
-      await loadGoals();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  const removeGoal = async (goal) => {
-    if (!window.confirm(`Excluir a meta "${goal.name}"?`)) return;
-    setBusyId(goal.id);
-    setError('');
-    try {
-      await focuserApi.goals.remove(goal.id);
-      await loadGoals();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusyId('');
-    }
-  };
-
-  return (
-    <AppLayout>
-      <PageHeader title="Metas" subtitle="defina um alvo e acompanhe seu progresso." action={<button type="button" className="button button-primary" onClick={openCreateForm}><Plus size={17} /> Nova meta</button>} />
-      <div className="filter-row" role="group" aria-label="Filtrar metas">
-        {[['active', 'Ativas'], ['archived', 'Arquivadas'], ['all', 'Todas']].map(([value, label]) => (
-          <button key={value} type="button" className={`filter-chip ${filter === value ? 'active' : ''}`} onClick={() => { setIsLoading(true); setError(''); setFilter(value); }}>{label}</button>
-        ))}
-      </div>
-      {showForm ? (
-        <form className="goal-form card" onSubmit={saveGoal}>
-          <h3>{editingGoal ? 'Editar meta' : 'Criar meta'}</h3>
-          <div className="goal-form-grid">
-            <label><span>Nome</span><input required maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
-            <label><span>Categoria</span><input maxLength={60} value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} placeholder="Pessoal, saúde..." /></label>
-            <label><span>Valor alvo</span><input required type="number" min="0.01" step="any" max="1000000000" value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })} /></label>
-            <label><span>Unidade</span><input required maxLength={30} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="livros, horas..." /></label>
-            <label><span>Período</span><select value={form.period} onChange={(event) => setForm({ ...form, period: event.target.value })}><option value="DAILY">Diário</option><option value="WEEKLY">Semanal</option><option value="MONTHLY">Mensal</option><option value="CUSTOM">Personalizado</option></select></label>
-            {editingGoal ? <label><span>Progresso atual</span><input type="number" min="0" step="any" max="1000000000" value={form.currentValue} onChange={(event) => setForm({ ...form, currentValue: event.target.value })} /></label> : null}
-          </div>
-          <label><span>Descrição</span><textarea maxLength={500} rows="3" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
-          {error ? <p className="error-text" role="alert">{error}</p> : null}
-          <div className="inline-row">
-            <button type="button" className="button button-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-            <button type="submit" className="button button-primary" disabled={Boolean(busyId)}>{busyId ? 'Salvando…' : 'Salvar meta'}</button>
-          </div>
-        </form>
-      ) : null}
-      <ApiState loading={isLoading} error={error && !showForm ? error : ''} empty={goals.length === 0 ? 'Nenhuma meta nesta categoria. Crie uma meta para acompanhar seu progresso.' : null}>
-        <div className="goal-grid">
-          {goals.map((goal) => {
-            const percent = Math.min(100, (goal.currentValue / goal.targetValue) * 100);
-            const periodLabel = { DAILY: 'Diária', WEEKLY: 'Semanal', MONTHLY: 'Mensal', CUSTOM: 'Personalizada' }[goal.period] || goal.period;
-            return (
-              <article className="goal-card card" key={goal.id}>
-                <div className="goal-top"><span className="status-pill">{periodLabel} · {goal.isActive ? 'Ativa' : 'Arquivada'}</span><Target size={18} /></div>
-                <div><h3>{goal.name}</h3><small>{goal.category || goal.unit}</small>{goal.description ? <p className="goal-description">{goal.description}</p> : null}</div>
-                <div className="goal-meta"><strong className="goal-value">{goal.currentValue} / {goal.targetValue}</strong><small>{goal.unit}</small></div>
-                <div className="progress-bar" role="progressbar" aria-label={`Progresso de ${goal.name}`} aria-valuenow={Math.round(percent)} aria-valuemin="0" aria-valuemax="100"><span style={{ width: `${percent}%` }} /></div>
-                <div className="goal-actions">
-                  <button type="button" className="button button-secondary" disabled={!goal.isActive || busyId === goal.id} onClick={() => addProgress(goal)}>+1 progresso</button>
-                  <button type="button" className="text-button" disabled={busyId === goal.id} aria-label={`Editar ${goal.name}`} onClick={() => editGoal(goal)}><Pencil size={16} /></button>
-                  <button type="button" className="text-button" disabled={busyId === goal.id} aria-label={goal.isActive ? `Arquivar ${goal.name}` : `Reativar ${goal.name}`} onClick={() => toggleArchive(goal)}>{goal.isActive ? <MoreHorizontal size={16} /> : <Check size={16} />}</button>
-                  <button type="button" className="text-button" disabled={busyId === goal.id} aria-label={`Excluir ${goal.name}`} onClick={() => removeGoal(goal)}><Trash2 size={16} /></button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </ApiState>
-    </AppLayout>
-  );
-}
-
 function AnalyticsPage() {
   const [period, setPeriod] = useState('week');
   const [metrics, setMetrics] = useState(null);
@@ -2972,322 +1901,25 @@ function AnalyticsPage() {
         </section>
         <ChartCard series={history?.series ?? []} period={period} />
         <section className="card today-list">
-          <div className="section-heading"><h3>Hábitos no período</h3><span className="metric-label">{metrics?.period?.from} – {metrics?.period?.to}</span></div>
+          <div className="section-heading"><div><p className="eyebrow">Hábito por hábito</p><h3>Hábitos no período</h3></div><span className="summary-pill">{period === 'week' ? 'Esta semana' : 'Este mês'}</span></div>
           {metrics?.habits?.length ? metrics.habits.map((habit) => (
-            <div className="today-habit" key={habit.id}>
-              <span>{habit.name}</span>
-              <span>{habit.completed}/{habit.scheduled} · {habit.completionRate == null ? '—' : `${Math.round(habit.completionRate * 100)}%`}</span>
+            <div className="period-habit" key={habit.id}>
+              <div className="period-habit-heading"><strong>{habit.name}</strong><span>{habit.completionRate == null ? '—' : `${Math.round(habit.completionRate * 100)}%`}</span></div>
+              <meter min="0" max="100" value={Math.max(0, Math.min(100, (habit.completionRate ?? 0) * 100))} aria-label={`Conclusão de ${habit.name}`} />
+              <small>{habit.completed} de {habit.scheduled} dias concluídos</small>
             </div>
           )) : <p className="muted-state">Sem hábitos registrados neste intervalo.</p>}
         </section>
       </ApiState>
+      <AnalysisInsights key={period} period={period} />
+      <FocusHistory />
     </AppLayout>
   );
 }
 
-function OwnProfileRedirect() {
-  const { user } = useAuth();
-  return <Navigate to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/app'} replace />;
-}
-
-function ProfilePage({ embedded = false, onClose, onProfileUpdated }) {
-  const { user, setUser, accentColor, updateAccentColor } = useAuth();
-  const [name, setName] = useState(user?.name || '');
-  const [username, setUsername] = useState(user?.username || '');
-  const [bio, setBio] = useState(user?.bio || '');
-  const [currentBookId, setCurrentBookId] = useState(user?.currentBookId || '');
-  const [favoriteBookId, setFavoriteBookId] = useState(user?.favoriteBookId || '');
-  const [books, setBooks] = useState([]);
-  const [booksError, setBooksError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [themeError, setThemeError] = useState('');
-  const [isSavingTheme, setIsSavingTheme] = useState(false);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
-  const [cropRequest, setCropRequest] = useState(null);
-  const [avatarMessage, setAvatarMessage] = useState('');
-  const [avatarError, setAvatarError] = useState('');
-  const [bannerMessage, setBannerMessage] = useState('');
-  const [bannerError, setBannerError] = useState('');
-
-  useEffect(() => () => {
-    if (cropRequest?.source) URL.revokeObjectURL(cropRequest.source);
-  }, [cropRequest]);
-
-  const closeCropEditor = useCallback(() => setCropRequest(null), []);
-
-  useEffect(() => {
-    let active = true;
-    focuserApi.reading.listBooks({ status: 'all', limit: '100' })
-      .then((response) => { if (active) setBooks(response.items); })
-      .catch((requestError) => { if (active) setBooksError(requestError.message); });
-    return () => { active = false; };
-  }, []);
-
-  const saveProfile = async (event) => {
-    event.preventDefault();
-    if (isSaving) return;
-    setIsSaving(true);
-    setMessage('');
-    setError('');
-    try {
-      const { user: updatedUser } = await focuserApi.updateProfile({
-        name: name.trim(),
-        username: username.trim() || null,
-        bio: bio.trim() || null,
-        currentBookId: currentBookId || null,
-        favoriteBookId: favoriteBookId || null,
-      });
-      setUser(updatedUser);
-      setName(updatedUser.name);
-      setUsername(updatedUser.username || '');
-      setBio(updatedUser.bio || '');
-      setCurrentBookId(updatedUser.currentBookId || '');
-      setFavoriteBookId(updatedUser.favoriteBookId || '');
-      setMessage('Perfil atualizado.');
-      onProfileUpdated?.(updatedUser.username);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const uploadProfileImage = async (event, type) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    const setImageMessage = type === 'banner' ? setBannerMessage : setAvatarMessage;
-    const setImageError = type === 'banner' ? setBannerError : setAvatarError;
-    setImageMessage('');
-    setImageError('');
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setImageError('Escolha uma imagem JPG, PNG ou WebP.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError('A imagem deve ter no máximo 5 MB.');
-      return;
-    }
-
-    setCropRequest({ source: URL.createObjectURL(file), type });
-  };
-
-  const uploadCroppedProfileImage = async (croppedImage, type) => {
-    const setImageMessage = type === 'banner' ? setBannerMessage : setAvatarMessage;
-    const setImageError = type === 'banner' ? setBannerError : setAvatarError;
-    const setUploading = type === 'banner' ? setIsUploadingBanner : setIsUploadingAvatar;
-    setImageMessage('');
-    setImageError('');
-    setUploading(true);
-    try {
-      const signature = type === 'banner'
-        ? await focuserApi.bannerUploadSignature()
-        : await focuserApi.avatarUploadSignature();
-      const formData = new FormData();
-      formData.append('file', croppedImage, type === 'banner' ? 'profile-banner.webp' : 'profile-avatar.webp');
-      formData.append('api_key', signature.apiKey);
-      formData.append('timestamp', String(signature.timestamp));
-      formData.append('folder', signature.folder);
-      formData.append('signature', signature.signature);
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(signature.cloudName)}/image/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      const result = await response.json();
-      if (!response.ok || typeof result.secure_url !== 'string') {
-        throw new Error(result.error?.message || 'Não foi possível enviar a imagem ao Cloudinary.');
-      }
-      const field = type === 'banner' ? 'bannerUrl' : 'avatarUrl';
-      const { user: updatedUser } = await focuserApi.updateProfile({ [field]: result.secure_url });
-      setUser(updatedUser);
-      setImageMessage(type === 'banner' ? 'Banner atualizado.' : 'Foto de perfil atualizada.');
-      onProfileUpdated?.(updatedUser.username);
-    } catch (uploadError) {
-      setImageError(uploadError.message);
-      throw uploadError;
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const activeBooks = books.filter((book) => book.isActive);
-
-  const selectAccentColor = async (color) => {
-    if (isSavingTheme) return;
-    setThemeError('');
-    setIsSavingTheme(true);
-    try {
-      await updateAccentColor(color);
-      onProfileUpdated?.(user?.username);
-    } catch (updateError) {
-      setThemeError(updateError.message);
-    } finally {
-      setIsSavingTheme(false);
-    }
-  };
-
-  const content = (
-    <>
-      {embedded ? (
-        <div className="profile-customization-heading">
-          <div>
-            <p className="eyebrow">Personalização</p>
-            <h2 id="profile-customization-title">Editar perfil</h2>
-            <p className="muted-state">Atualize as informações e a aparência do seu perfil público.</p>
-          </div>
-          <button type="button" className="icon-button" aria-label="Fechar personalização" onClick={onClose}><X size={19} /></button>
-        </div>
-      ) : (
-        <PageHeader title="Perfil" eyebrow="Personalização" subtitle="Personalize as informações e a aparência do seu perfil público." />
-      )}
-      <form className="card profile-settings" onSubmit={saveProfile}>
-        <div className="profile-settings-section-heading">
-          <span className="eyebrow">identidade</span>
-          <h3>Seu perfil</h3>
-          <p className="muted-state">Escolha como as pessoas verão você na comunidade.</p>
-        </div>
-        <div className="profile-media-grid">
-          <section className="profile-media-card profile-banner-card" aria-label="Banner do perfil">
-            <div className="profile-banner-preview">
-              {user?.bannerUrl ? <img src={user.bannerUrl} alt="Prévia do banner do perfil" /> : <span>Seu banner</span>}
-              <span className="profile-media-overlay">Banner do perfil</span>
-            </div>
-            <div className="profile-media-card-footer">
-              <div className="profile-media-copy">
-                <strong>Imagem de capa</strong>
-                <small>JPG, PNG ou WebP · até 5 MB</small>
-              </div>
-              <label className="button button-secondary profile-avatar-button">
-                {isUploadingBanner ? 'Enviando…' : user?.bannerUrl ? 'Trocar' : 'Adicionar'}
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'banner')} disabled={isUploadingBanner} />
-              </label>
-            </div>
-            {bannerMessage ? <p className="success-text" role="status">{bannerMessage}</p> : null}
-            {bannerError ? <p className="error-text" role="alert">{bannerError}</p> : null}
-          </section>
-          <section className="profile-media-card profile-avatar-card" aria-label="Foto do perfil">
-            <div className="profile-avatar-preview">
-              {user?.avatarUrl ? <img src={user.avatarUrl} alt="Foto do perfil" /> : <User size={30} />}
-            </div>
-            <div className="profile-media-card-footer">
-              <div className="profile-media-copy">
-                <strong>Foto de perfil</strong>
-                <small>JPG, PNG ou WebP · até 5 MB</small>
-              </div>
-              <label className="button button-secondary profile-avatar-button">
-                {isUploadingAvatar ? 'Enviando…' : 'Trocar'}
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'avatar')} disabled={isUploadingAvatar} />
-              </label>
-            </div>
-            {avatarMessage ? <p className="success-text" role="status">{avatarMessage}</p> : null}
-            {avatarError ? <p className="error-text" role="alert">{avatarError}</p> : null}
-          </section>
-        </div>
-        <div className="profile-settings-section-heading profile-info-heading">
-          <span className="eyebrow">informações</span>
-          <h3>Detalhes públicos</h3>
-        </div>
-        <div className="profile-fields-grid">
-          <label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength="80" required /></label>
-          <label>
-            <span>Nome de usuário</span>
-            <div className="profile-username-input"><span aria-hidden="true">@</span><input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} minLength="3" maxLength="30" pattern="[a-zA-Z0-9._]{3,30}" placeholder="seu.usuario" /></div>
-            <small className="muted-state">Seu identificador público; use letras, números, pontos ou sublinhados.</small>
-          </label>
-          <label className="profile-bio-field"><span>Bio</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength="500" rows="4" placeholder="Conte um pouco sobre você." /><small className="muted-state profile-bio-count">{bio.length}/500 caracteres</small></label>
-        </div>
-        <div className="profile-settings-section-heading profile-books-heading">
-          <span className="eyebrow">leituras</span>
-          <h3>Livros no perfil</h3>
-          <p className="muted-state">Destaque o que está lendo e escolha seu livro favorito.</p>
-        </div>
-        <div className="profile-book-pickers">
-          <ProfileBookPicker
-            id="current-book"
-            title="Livro em leitura"
-            description="Escolha entre seus livros ativos."
-            books={activeBooks}
-            value={currentBookId}
-            onChange={setCurrentBookId}
-          />
-          <ProfileBookPicker
-            id="favorite-book"
-            title="Livro favorito"
-            description="Escolha entre os livros cadastrados na sua conta."
-            books={books}
-            value={favoriteBookId}
-            onChange={setFavoriteBookId}
-          />
-        </div>
-        {booksError ? <p className="error-text" role="alert">Não foi possível carregar seus livros: {booksError}</p> : null}
-        {!booksError && books.length === 0 ? <p className="muted-state">Ainda não há livros cadastrados. <Link to="/app/leituras">Adicione livros na área de leituras.</Link></p> : null}
-        <div className="profile-save-footer">
-          <div>
-            {message ? <p className="success-text" role="status">{message}</p> : <small>As alterações ficam visíveis no seu perfil público.</small>}
-            {error ? <p className="error-text" role="alert">{error}</p> : null}
-          </div>
-          <button type="submit" className="button button-primary" disabled={isSaving}>{isSaving ? 'Salvando…' : 'Salvar perfil'}</button>
-        </div>
-      </form>
-      <section className="card theme-settings" aria-labelledby="accent-color-heading">
-        <div className="profile-settings-section-heading">
-          <span className="eyebrow">aparência</span>
-          <h3 id="accent-color-heading">Cor de destaque</h3>
-          <p className="muted-state">Personalize botões e destaques do seu perfil. A preferência fica salva na sua conta.</p>
-        </div>
-        <div className="accent-options" role="group" aria-label="Escolha uma cor de destaque">
-          {ACCENT_COLORS.map((color) => (
-            <button
-              type="button"
-              key={color.value}
-              className={`accent-option ${accentColor === color.value ? 'selected' : ''}`}
-              style={{ '--swatch-color': color.value }}
-              aria-label={color.label}
-              aria-pressed={accentColor === color.value}
-              disabled={isSavingTheme}
-              onClick={() => selectAccentColor(color.value)}
-            >
-              <span />
-              <small>{color.label}</small>
-            </button>
-          ))}
-        </div>
-        <label className="custom-accent-picker" htmlFor="custom-accent-color">
-          <span className="custom-accent-swatch" style={{ '--swatch-color': accentColor }} aria-hidden="true" />
-          <span><strong>Cor personalizada</strong><small>{accentColor.toUpperCase()}</small></span>
-          <input
-            id="custom-accent-color"
-            className="accent-color-input"
-            type="color"
-            value={accentColor}
-            aria-label="Escolher cor de destaque personalizada"
-            disabled={isSavingTheme}
-            onChange={(event) => selectAccentColor(event.target.value)}
-          />
-        </label>
-        {isSavingTheme ? <p className="muted-state" role="status">Salvando preferência…</p> : null}
-        {themeError ? <p className="error-text" role="alert">{themeError}</p> : null}
-      </section>
-      {cropRequest ? (
-        <ProfileImageCropper
-          source={cropRequest.source}
-          type={cropRequest.type}
-          onCancel={closeCropEditor}
-          onApply={(croppedImage) => uploadCroppedProfileImage(croppedImage, cropRequest.type)}
-        />
-      ) : null}
-    </>
-  );
-  return embedded
-    ? <div className="profile-customization-content">{content}</div>
-    : <AppLayout>{content}</AppLayout>;
-}
-
 function AccountSettingsPage() {
   const { user, setUser } = useAuth();
+  const [name, setName] = useState(user?.name || '');
   const [timezone, setTimezone] = useState(user?.timezone || 'America/Sao_Paulo');
   const [isSavingTimezone, setIsSavingTimezone] = useState(false);
   const [timezoneMessage, setTimezoneMessage] = useState('');
@@ -3307,8 +1939,9 @@ function AccountSettingsPage() {
     setTimezoneError('');
     setIsSavingTimezone(true);
     try {
-      const { user: updatedUser } = await focuserApi.updateProfile({ timezone: timezone.trim() });
+      const { user: updatedUser } = await focuserApi.updateProfile({ name: name.trim(), timezone: timezone.trim() });
       setUser(updatedUser);
+      setName(updatedUser.name || '');
       setTimezone(updatedUser.timezone);
       setTimezoneMessage('Fuso horário atualizado.');
     } catch (error) {
@@ -3349,12 +1982,17 @@ function AccountSettingsPage() {
     <AppLayout>
       <PageHeader title="Configurações" eyebrow="Conta" subtitle="Gerencie a segurança e as preferências da sua conta." />
       <div className="account-settings-stack">
+        <AppearanceSettings user={user} onUserUpdated={setUser} />
         <form className="card profile-settings account-settings-card" onSubmit={saveTimezone}>
           <div>
             <p className="eyebrow">Preferências</p>
             <h2>Fuso horário</h2>
             <p className="muted-state">Define em qual dia seus hábitos e check-ins são contabilizados.</p>
           </div>
+          <label>
+            <span>Nome</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} maxLength="80" required />
+          </label>
           <label>
             <span>Fuso horário IANA</span>
             <input value={timezone} onChange={(event) => setTimezone(event.target.value)} maxLength="64" placeholder="America/Sao_Paulo" required />
@@ -3389,6 +2027,10 @@ function AccountSettingsPage() {
       </div>
     </AppLayout>
   );
+}
+
+function SettingsPage() {
+  return <AccountSettingsPage />;
 }
 
 function DownloadPage() {
@@ -3463,13 +2105,14 @@ function App() {
           <Route path="/u/:username" element={<PublicProfilePage />} />
           <Route path="/download" element={<DownloadPage />} />
           <Route path="/app" element={<RequireAuth><DashboardPage /></RequireAuth>} />
-          <Route path="/app/habitos" element={<RequireAuth><HabitsPage /></RequireAuth>} />
-          <Route path="/app/metas" element={<RequireAuth><GoalsPage /></RequireAuth>} />
-          <Route path="/app/leituras" element={<RequireAuth><ReadingLibrary /></RequireAuth>} />
+          <Route path="/app/academia" element={<RequireAuth><AcademyRoutePage /></RequireAuth>} />
+          <Route path="/app/habitos" element={<RequireAuth><HabitsRoutePage /></RequireAuth>} />
+          <Route path="/app/metas" element={<RequireAuth><GoalsRoutePage /></RequireAuth>} />
+          <Route path="/app/leituras" element={<RequireAuth><ReadingRoutePage /></RequireAuth>} />
           <Route path="/app/amigos" element={<RequireAuth><FriendsPage /></RequireAuth>} />
           <Route path="/app/analises" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
-          <Route path="/app/perfil" element={<RequireAuth><OwnProfileRedirect /></RequireAuth>} />
-          <Route path="/app/configuracoes" element={<RequireAuth><AccountSettingsPage /></RequireAuth>} />
+          <Route path="/app/perfil" element={<RequireAuth><ProfileRoutePage /></RequireAuth>} />
+          <Route path="/app/configuracoes" element={<RequireAuth><SettingsPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AuthProvider>
