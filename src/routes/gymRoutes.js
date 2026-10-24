@@ -3,6 +3,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middlewares/auth.js";
 import {
+    exerciseImagesSchema,
     workoutPlanSchema,
     workoutSessionExerciseSchema,
     workoutSetSchema,
@@ -14,18 +15,29 @@ import {
 import { asyncHandler, HttpError, sendSuccess } from "../utils/apiResponse.js";
 import { addDateKeyDays, dateKeyInTimezone, isDateKey } from "../utils/date.js";
 import { calculateWorkoutStats } from "../services/workoutStatsService.js";
+import { buildWorkoutCalendarQuery } from "../services/workoutCalendarService.js";
 import { buildWorkoutEndUpdate } from "../services/workoutSessionStateService.js";
+import { lookupExerciseImages } from "../services/exerciseImageService.js";
+import { userRateLimiters } from "../middlewares/rateLimiters.js";
+import { createWithinUserQuota } from "../services/userQuotaService.js";
 
 const router = Router();
 const MAX_PLANS_PER_USER = 100;
 const MAX_STATS_SESSIONS = 500;
 const STATS_DAYS = 365;
+const exerciseImagesRateLimiter = userRateLimiters.exerciseImagesPerHour;
 const FREE_WORKOUT_POINTER = {
     OR: [
         { activeWorkoutSessionId: null },
         { activeWorkoutSessionId: { isSet: false } },
     ],
 };
+
+router.post("/gym/exercise-images", requireAuth, exerciseImagesRateLimiter, asyncHandler(async (req, res) => {
+    const { names } = parse(exerciseImagesSchema, req.body);
+    const items = await lookupExerciseImages(names);
+    return sendSuccess(res, { items });
+}));
 
 function rejectUnknownQuery(query, allowed) {
     const unknown = Object.keys(query).filter((key) => !allowed.includes(key));
@@ -191,12 +203,10 @@ async function persistSessionExercises(session, exercises, userId) {
 
 router.post("/gym/plans", requireAuth, asyncHandler(async (req, res) => {
     const input = parse(workoutPlanSchema, req.body);
-    if (await prisma.workoutPlan.count({ where: { userId: req.user.id } }) >= MAX_PLANS_PER_USER) {
-        throw new HttpError(422, "WORKOUT_PLAN_LIMIT_REACHED", "O limite de fichas de treino foi atingido.");
-    }
-    const plan = await prisma.workoutPlan.create({
+    const plan = await createWithinUserQuota({
+        prisma, userId: req.user.id, resource: "workoutPlan", limit: MAX_PLANS_PER_USER,
+        errorCode: "WORKOUT_PLAN_LIMIT_REACHED", errorMessage: "O limite de fichas de treino foi atingido.",
         data: {
-            userId: req.user.id,
             name: input.name,
             exercises: normalizePlanExercises(input.exercises),
         },
@@ -522,21 +532,9 @@ router.get("/gym/calendar", requireAuth, asyncHandler(async (req, res) => {
 router.get("/gym/calendar/:date", requireAuth, asyncHandler(async (req, res) => {
     const { date } = req.params;
     if (!isDateKey(date)) throw new HttpError(400, "VALIDATION_ERROR", "Data deve estar no formato YYYY-MM-DD.");
-    const sessions = await prisma.workoutSession.findMany({
-        where: {
-            userId: req.user.id,
-            status: "COMPLETED",
-            completedAt: {
-                gte: new Date(`${addDateKeyDays(date, -1)}T00:00:00.000Z`),
-                lt: new Date(`${addDateKeyDays(date, 2)}T00:00:00.000Z`),
-            },
-        },
-        orderBy: { completedAt: "asc" },
-        take: 100,
-    });
-    const items = sessions
-        .filter((session) => dateKeyInTimezone(session.completedAt, req.user.timezone) === date)
-        .map(mapSession);
+    const query = buildWorkoutCalendarQuery(req.user.id, date, req.user.timezone);
+    const sessions = await prisma.workoutSession.findMany(query);
+    const items = sessions.map(mapSession);
     return sendSuccess(res, { date, items });
 }));
 

@@ -1,0 +1,54 @@
+name: API CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    env:
+      DATABASE_URL: mongodb://127.0.0.1:27018/focuser_test?replicaSet=rs0
+      JWT_SECRET: focuser-ci-isolated-test-secret-at-least-32-bytes
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Initialize isolated MongoDB replica set
+        run: |
+          docker run --detach --name focuser-mongodb -p 27018:27018 mongo:7 mongod --port 27018 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec focuser-mongodb mongosh --quiet --port 27018 --eval "db.adminCommand({ ping: 1 })" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec focuser-mongodb mongosh --quiet --port 27018 --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27018'}]})"
+          for attempt in $(seq 1 30); do
+            if docker exec focuser-mongodb mongosh --quiet --port 27018 --eval "db.hello().isWritablePrimary" | grep -q true; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "MongoDB replica set did not become primary" >&2
+          exit 1
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+      - name: Apply API schema to the isolated database
+        run: npm run db:push
+      - name: Unit tests
+        run: npm test
+      - name: Regression tests
+        run: npm run test:regression
+      - name: MongoDB integration tests
+        run: npm run test:db:integration

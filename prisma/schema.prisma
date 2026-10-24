@@ -24,7 +24,13 @@
     favoriteBookId String? @db.ObjectId
     timezone     String   @default("America/Sao_Paulo")
     accentColor  String   @default("#ffffff")
+    appAccentColor String @default("#ffffff")
+    appColorPresets AppColorPreset[]
     tokenVersion Int      @default(0)
+    quotaVersion Int?     @default(0)
+    readingFocusBookId String? @db.ObjectId
+    readingFocusSessionId String?
+    readingFocusUpdatedAt DateTime?
     emailVerifiedAt DateTime?
     emailVerificationRequired Boolean @default(false)
     emailVerificationCodeHash String?
@@ -42,6 +48,12 @@
     updatedAt    DateTime @updatedAt
     sentFriendships     Friendship[] @relation("FriendshipRequester")
     receivedFriendships Friendship[] @relation("FriendshipAddressee")
+  }
+
+  type AppColorPreset {
+    id    String
+    name  String
+    color String
   }
 
   enum FriendshipStatus {
@@ -63,6 +75,8 @@
     @@unique([requesterId, addresseeId])
     @@index([addresseeId, status, createdAt])
     @@index([requesterId, status, createdAt])
+    @@index([addresseeId, createdAt, id])
+    @@index([requesterId, createdAt, id])
   }
 
   model PendingProfileUpload {
@@ -86,10 +100,19 @@
     name         String
     description  String?
     category     String?
+    icon         String?
+    dailyTarget  Int?      @default(1)
+    step         Int       @default(1)
+    color        String    @default("#c4b5fd")
     frequency    Frequency @default(DAILY)
     daysOfWeek   Int[]
     isActive     Boolean   @default(true)
     startDateKey String
+    position     Int?      @default(0)
+    timeOfDay    String?
+    unit         String?
+    currentStreak  Int     @default(0)
+    longestStreak  Int     @default(0)
     createdAt    DateTime  @default(now())
     updatedAt    DateTime  @updatedAt
 
@@ -102,6 +125,7 @@
     habitId     String   @db.ObjectId
     completedAt DateTime
     dateKey     String
+    occurrence  Int?     @default(1)
     createdAt   DateTime @default(now())
 
     @@unique([habitId, dateKey])
@@ -190,6 +214,7 @@
     createdAt   DateTime @default(now())
     updatedAt   DateTime @updatedAt
 
+    @@index([userId, isActive])
     @@index([userId, isActive, createdAt])
   }
 
@@ -202,8 +227,10 @@
     dateKey     String
     createdAt   DateTime @default(now())
 
+    @@index([bookId, dateKey])
     @@index([userId, dateKey])
     @@index([userId, bookId, createdAt])
+    @@index([userId, createdAt, id])
   }
 
   type WorkoutPlanExercise {

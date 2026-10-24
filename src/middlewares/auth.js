@@ -1,22 +1,24 @@
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
+import { readJwtSettings } from "../config/env.js";
 import { asyncHandler, HttpError } from "../utils/apiResponse.js";
 
 export const AUTH_COOKIE = "focuser_token";
-const JWT_SECRET = process.env.JWT_SECRET;
 
 function hasStrongJwtSecret() {
-    return typeof JWT_SECRET === "string" && Buffer.byteLength(JWT_SECRET, "utf8") >= 32;
+    return typeof process.env.JWT_SECRET === "string"
+        && Buffer.byteLength(process.env.JWT_SECRET, "utf8") >= 32;
 }
 
 export function createAuthToken(user) {
     if (!hasStrongJwtSecret()) {
         throw new HttpError(500, "AUTH_NOT_CONFIGURED", "Configure JWT_SECRET com ao menos 32 bytes.");
     }
+    const { secret, expiresIn } = readJwtSettings();
     return jwt.sign(
         { sub: user.id, tokenVersion: user.tokenVersion },
-        JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+        secret,
+        { expiresIn }
     );
 }
 
@@ -29,7 +31,7 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
 
     let claims;
     try {
-        claims = jwt.verify(token, JWT_SECRET);
+        claims = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
         throw new HttpError(401, "INVALID_TOKEN", "A sessão é inválida ou expirou.");
     }
@@ -56,7 +58,7 @@ export async function optionalAuth(req) {
 
     let claims;
     try {
-        claims = jwt.verify(token, JWT_SECRET);
+        claims = jwt.verify(token, process.env.JWT_SECRET);
         if (typeof claims !== "object" || typeof claims.sub !== "string") return null;
     } catch {
         return null;

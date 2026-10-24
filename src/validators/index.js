@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { HttpError } from "../utils/apiResponse.js";
+import { decodeCursor } from "../utils/cursor.js";
 import { isDateKey } from "../utils/date.js";
+import { HABIT_CATEGORIES } from "../services/habitCategoryService.js";
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Identificador inválido.");
 const dateKey = z.string().refine(isDateKey, "Data deve estar no formato YYYY-MM-DD.");
@@ -20,6 +22,11 @@ const timezone = z.string().min(1).max(100).refine((value) => {
     }
 }, "Fuso horário inválido.");
 const dayOfWeek = z.number().int().min(0).max(6);
+const appColorPreset = z.object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(32),
+    color: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida."),
+}).strict();
 
 export const registerSchema = z.object({
     name: z.string().trim().min(1).max(80),
@@ -56,6 +63,8 @@ export const updateUserSchema = z.object({
     bio: bio.optional(),
     timezone: timezone.optional(),
     accentColor: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida.").optional(),
+    appAccentColor: z.string().regex(/^#[\da-f]{6}$/i, "Cor hexadecimal inválida.").optional(),
+    appColorPresets: z.array(appColorPreset).max(30).optional(),
     avatarUrl: z.string().url().max(1000).nullable().optional(),
     bannerUrl: z.string().url().max(1000).nullable().optional(),
     currentBookId: objectId.nullable().optional(),
@@ -64,6 +73,15 @@ export const updateUserSchema = z.object({
 
 export const publicUsernameParamSchema = z.object({
     username,
+}).strict();
+
+export const readingFocusStartSchema = z.object({
+    bookId: objectId,
+    sessionId: z.string().uuid(),
+}).strict();
+
+export const readingFocusStopSchema = z.object({
+    sessionId: z.string().uuid(),
 }).strict();
 
 export const friendRequestCreateSchema = z.object({
@@ -148,13 +166,39 @@ export const readingLogCreateSchema = z.object({
 export const isbnLookupSchema = z.object({
     title: z.string().trim().min(1).max(160),
     author: z.string().trim().max(120).optional(),
+    isbn: z.string().trim().max(20).optional(),
 }).strict();
+
+export const HABIT_UNITS = ["REPS", "ML", "MIN", "PAGES", "SESSIONS"];
+export const HABIT_TIME_OF_DAY = ["ANYTIME", "MORNING", "AFTERNOON", "EVENING"];
+const habitUnitSchema = z.enum(HABIT_UNITS);
+const habitTimeOfDaySchema = z.enum(HABIT_TIME_OF_DAY);
+// Recomendado para hábitos contáveis: ml, minutos, páginas giram mais que repetições.
+const HABIT_UNIT_CAPS = { REPS: 100, ML: 10_000, MIN: 1_440, PAGES: 5_000, SESSIONS: 50 };
+const HABIT_DEFAULT_CAP = 20;
+
+export function habitTargetCap(value) {
+    if (!value || value.unit === undefined) return HABIT_DEFAULT_CAP;
+    return HABIT_UNIT_CAPS[value.unit] ?? HABIT_DEFAULT_CAP;
+}
+
+const habitTargetRefine = {
+    message: "dailyTarget excede o limite da unidade escolhida.",
+    path: ["dailyTarget"],
+};
 
 export const habitCreateSchema = z.object({
     name: z.string().trim().min(1).max(100),
     description: z.string().trim().max(500).nullable().optional(),
+    category: z.enum(HABIT_CATEGORIES).optional(),
+    icon: z.enum(["TARGET", "BOOK", "DUMBBELL", "DROPLET", "BRAIN", "MOON", "HEART", "LEAF", "MUSIC", "CODE", "COFFEE", "SPARKLES"]).default("TARGET"),
+    dailyTarget: z.number().int().min(1).max(HABIT_UNIT_CAPS.ML).default(1),
+    step: z.number().int().min(1).max(HABIT_UNIT_CAPS.ML).default(1),
+    color: z.string().regex(/^#[\da-f]{6}$/i).default("#c4b5fd"),
     frequency: z.enum(["DAILY", "CUSTOM"]).default("DAILY"),
     daysOfWeek: z.array(dayOfWeek).max(7).optional(),
+    unit: habitUnitSchema.nullable().optional(),
+    timeOfDay: habitTimeOfDaySchema.default("ANYTIME"),
 }).strict().superRefine((value, context) => {
     if (value.frequency === "CUSTOM" && (!value.daysOfWeek || value.daysOfWeek.length === 0)) {
         context.addIssue({
@@ -166,19 +210,53 @@ export const habitCreateSchema = z.object({
     if (value.daysOfWeek && new Set(value.daysOfWeek).size !== value.daysOfWeek.length) {
         context.addIssue({ code: "custom", path: ["daysOfWeek"], message: "Dias duplicados." });
     }
+    const cap = habitTargetCap(value);
+    if (value.dailyTarget > cap) {
+        context.addIssue({ code: "custom", ...habitTargetRefine });
+    }
+    if (value.step > cap || value.step > value.dailyTarget) {
+        context.addIssue({ code: "custom", path: ["step"], message: "O passo deve caber na meta diária e no limite da unidade." });
+    }
 });
 
 export const habitUpdateSchema = z.object({
     name: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().max(500).nullable().optional(),
+    icon: z.enum(["TARGET", "BOOK", "DUMBBELL", "DROPLET", "BRAIN", "MOON", "HEART", "LEAF", "MUSIC", "CODE", "COFFEE", "SPARKLES"]).optional(),
+    dailyTarget: z.number().int().min(1).max(HABIT_UNIT_CAPS.ML).optional(),
+    step: z.number().int().min(1).max(HABIT_UNIT_CAPS.ML).optional(),
+    color: z.string().regex(/^#[\da-f]{6}$/i).optional(),
     frequency: z.enum(["DAILY", "CUSTOM"]).optional(),
     daysOfWeek: z.array(dayOfWeek).max(7).optional(),
+    unit: habitUnitSchema.nullable().optional(),
+    timeOfDay: habitTimeOfDaySchema.optional(),
+    category: z.enum(HABIT_CATEGORIES).optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.")
     .refine((value) => !value.daysOfWeek || new Set(value.daysOfWeek).size === value.daysOfWeek.length,
-        "Dias da semana duplicados.");
+        "Dias da semana duplicados.")
+    .refine((value) => value.dailyTarget === undefined || value.unit === undefined || value.dailyTarget <= habitTargetCap(value),
+        habitTargetRefine)
+    .refine((value) => value.step === undefined || value.unit === undefined || value.step <= habitTargetCap(value), {
+        message: "step excede o limite da unidade.",
+        path: ["step"],
+    });
+
+export const habitReorderSchema = z.object({
+    orderedIds: z.array(objectId).min(1, 'Envie ao menos um identificador.').max(100, 'Limite de 100 hábitos excedido.'),
+}).strict().refine((value) => new Set(value.orderedIds).size === value.orderedIds.length, {
+    message: 'A lista de reordenação não pode conter identificadores duplicados.',
+    path: ['orderedIds'],
+});
 
 export const archiveSchema = z.object({ archived: z.boolean().default(true) }).strict();
-export const checkInCreateSchema = z.object({ date: dateKey.optional() }).strict();
+export const checkInCreateSchema = z.object({
+    date: dateKey.optional(),
+    amount: z.number().int().min(1).max(10_000).default(1),
+}).strict();
+export const checkInRemoveSchema = z.object({
+    date: dateKey,
+    amount: z.number().int().min(1).max(10_000).default(1),
+}).strict();
 export const periodQuerySchema = z.object({
     period: z.enum(["week", "month"]).optional(),
     from: dateKey.optional(),
@@ -226,6 +304,10 @@ export const workoutSessionExerciseSchema = z.object({
     restSeconds: z.number().int().min(0).max(900).default(90),
 }).strict();
 
+export const exerciseImagesSchema = z.object({
+    names: z.array(z.string().trim().min(1).max(100)).min(1).max(50),
+}).strict();
+
 export const workoutSetSchema = z.object({
     weight: z.number().finite().min(0).max(100_000),
     reps: z.number().int().min(1).max(1_000),
@@ -254,4 +336,12 @@ export function parsePagination(query, { defaultLimit = 20, maxLimit = 100 } = {
         throw new HttpError(400, "VALIDATION_ERROR", "Paginação inválida.");
     }
     return { page, limit };
+}
+
+export function parseCursorPagination(query, { defaultLimit = 20, maxLimit = 50 } = {}) {
+    const limit = query.limit === undefined ? defaultLimit : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > maxLimit) {
+        throw new HttpError(400, "VALIDATION_ERROR", "PaginaÃ§Ã£o invÃ¡lida.");
+    }
+    return { limit, after: query.cursor === undefined ? null : decodeCursor(query.cursor) };
 }

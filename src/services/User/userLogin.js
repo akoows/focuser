@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import { secureUser } from "../../dtos/secureUser.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 export async function userLogin(data) {
     try {

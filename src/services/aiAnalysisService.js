@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HttpError } from "../utils/apiResponse.js";
+import { readIntegerSetting } from "../config/env.js";
 
 const responseSchema = z.object({
     summary: z.string().trim().min(1).max(1500),
@@ -39,7 +40,7 @@ export async function analyzeHabitMetrics(metrics) {
                     { role: "user", content: `<dados>\n${data}\n</dados>` },
                 ],
             }),
-            signal: AbortSignal.timeout(12_000),
+            signal: AbortSignal.timeout(readIntegerSetting(process.env, "GROQ_TIMEOUT_MS", 15_000, { min: 500, max: 120_000 })),
         });
     } catch (error) {
         if (error?.name === "TimeoutError" || error?.name === "AbortError") {

@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../utils/apiResponse.js";
+import { cursorAfter, encodeCursor } from "../utils/cursor.js";
 
 const FRIEND_SELECT = { id: true, name: true, username: true, avatarUrl: true, accentColor: true };
 
@@ -13,20 +14,27 @@ function requestSummary(user, friendship) {
 
 export function createFriendService(prismaClient) {
     return {
-        async list(userId) {
+        async list(userId, { limit = 20, after = null } = {}) {
             const relations = await prismaClient.friendship.findMany({
-                where: { OR: [{ requesterId: userId }, { addresseeId: userId }] },
+                where: {
+                    AND: [
+                        { OR: [{ requesterId: userId }, { addresseeId: userId }] },
+                        ...(after ? [cursorAfter(after)] : []),
+                    ],
+                },
                 include: {
                     requester: { select: FRIEND_SELECT },
                     addressee: { select: FRIEND_SELECT },
                 },
-                orderBy: { createdAt: "desc" },
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                take: limit + 1,
             });
 
             const friends = [];
             const incomingRequests = [];
             const outgoingRequests = [];
-            for (const relation of relations) {
+            const page = relations.slice(0, limit);
+            for (const relation of page) {
                 const isRequester = relation.requesterId === userId;
                 const otherUser = isRequester ? relation.addressee : relation.requester;
                 if (relation.status === "ACCEPTED") {
@@ -37,7 +45,18 @@ export function createFriendService(prismaClient) {
                     incomingRequests.push(requestSummary(otherUser, relation));
                 }
             }
-            return { friends, incomingRequests, outgoingRequests };
+            const hasMore = relations.length > limit;
+            const last = page.at(-1);
+            return {
+                friends,
+                incomingRequests,
+                outgoingRequests,
+                pagination: {
+                    limit,
+                    hasMore,
+                    nextCursor: hasMore && last ? encodeCursor(last) : null,
+                },
+            };
         },
 
         async status(userId, username) {

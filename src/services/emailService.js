@@ -41,7 +41,10 @@ export async function sendAuthCode({ to, code, purpose }) {
         }
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        console.error("[email] Falha ao enviar código de autenticação.", error);
+        console.error("[email] Falha ao enviar código de autenticação.", {
+            name: typeof error?.name === "string" ? error.name : "Error",
+            code: typeof error?.code === "string" ? error.code : undefined,
+        });
         throw new HttpError(503, "EMAIL_DELIVERY_FAILED", "Não foi possível enviar o código por e-mail. Tente novamente.");
     }
 }

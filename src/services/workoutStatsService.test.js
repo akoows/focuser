@@ -31,8 +31,11 @@ test("calcula médias de repetições, carga máxima e estimativa apenas com sé
 
     assert.equal(result.sessionsTotal, 1);
     assert.equal(result.totalCompletedSets, 2);
+    assert.equal(result.totalVolume, 1_140);
     assert.equal(result.averageReps, 6.5);
     assert.equal(result.exercises[0].bestWeight, 100);
+    assert.equal(result.exercises[0].bestRepSet.weight, 80);
+    assert.equal(result.exercises[0].bestRepSet.reps, 8);
     assert.equal(result.exercises[0].bestSet.weight, 100);
     assert.equal(result.exercises[0].bestSet.reps, 5);
     assert.equal(result.exercises[0].bestSet.estimatedOneRepMax, 100 * (1 + 5 / 30));
@@ -40,6 +43,10 @@ test("calcula médias de repetições, carga máxima e estimativa apenas com sé
     assert.equal(result.repetitionsBySession[0].averageReps, 6.5);
     assert.equal(result.repetitionsByWeek[0].averageReps, 6.5);
     assert.equal(result.repetitionsByMonth[0].sessions, 1);
+    assert.equal(result.volumeBySession[0].volume, 1_140);
+    assert.equal(result.volumeByWeek[0].volume, 1_140);
+    assert.equal(result.volumeByMonth[0].volume, 1_140);
+    assert.equal(result.exercises[0].history[0].volume, 1_140);
 });
 
 test("não estima 1RM sem uma série válida nem conta sessões abandonadas no calendário", () => {
@@ -71,7 +78,11 @@ test("não mostra média de repetições para sessões sem séries concluídas",
 
     assert.equal(result.sessionsTotal, 1);
     assert.equal(result.averageReps, null);
+    assert.equal(result.totalVolume, 0);
     assert.equal(result.repetitionsBySession.length, 0);
     assert.equal(result.repetitionsByWeek.length, 0);
     assert.equal(result.repetitionsByMonth.length, 0);
+    assert.equal(result.volumeBySession.length, 0);
+    assert.equal(result.volumeByWeek.length, 0);
+    assert.equal(result.volumeByMonth.length, 0);
 });

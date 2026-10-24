@@ -1,5 +1,7 @@
 import { HttpError } from "./apiResponse.js";
 
+export const MAX_BACKDATE_DAYS = 7;
+
 export function isDateKey(value) {
     if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const date = new Date(`${value}T00:00:00.000Z`);
@@ -15,6 +17,35 @@ export function dateKeyInTimezone(date, timezone) {
     }).formatToParts(date);
     const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
     return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function dateKeyStartInTimezone(dateKey, timezone) {
+    if (!isDateKey(dateKey)) throw new HttpError(400, "VALIDATION_ERROR", "Data deve estar no formato YYYY-MM-DD.");
+    const [year, month, day] = dateKey.split("-").map(Number);
+    const target = Date.UTC(year, month - 1, day);
+    const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+    });
+    let timestamp = target;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        const parts = Object.fromEntries(formatter.formatToParts(new Date(timestamp))
+            .map(({ type, value }) => [type, value]));
+        const represented = Date.UTC(
+            Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+            Number(parts.hour), Number(parts.minute), Number(parts.second),
+        );
+        const correction = target - represented;
+        timestamp += correction;
+        if (correction === 0) return new Date(timestamp);
+    }
+    return new Date(timestamp);
 }
 
 export function dateKeyToUtcDate(dateKey) {
@@ -37,6 +68,11 @@ export function weekdayForDateKey(dateKey) {
     return new Date(`${dateKey}T12:00:00.000Z`).getUTCDay();
 }
 
+export function startOfWeek(dateKey) {
+    const weekday = weekdayForDateKey(dateKey);
+    return addDateKeyDays(dateKey, weekday === 0 ? -6 : 1 - weekday);
+}
+
 export function dateRange(from, to, maxDays = 366) {
     if (!isDateKey(from) || !isDateKey(to) || from > to) {
         throw new HttpError(400, "VALIDATION_ERROR", "Intervalo de datas inválido.");
@@ -49,7 +85,8 @@ export function dateRange(from, to, maxDays = 366) {
 }
 
 export function isHabitScheduled(habit, dateKey) {
-    if (dateKey < habit.startDateKey) return false;
+    if (dateKey < habit.startDateKey
+        && daysBetween(dateKey, habit.startDateKey) - 1 > MAX_BACKDATE_DAYS) return false;
     return habit.frequency === "DAILY" || habit.daysOfWeek.includes(weekdayForDateKey(dateKey));
 }
 

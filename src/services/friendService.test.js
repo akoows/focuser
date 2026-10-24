@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createFriendService } from "./friendService.js";
+import { decodeCursor } from "../utils/cursor.js";
 
 const users = [
     { id: "000000000000000000000001", username: "alice", name: "Alice", avatarUrl: null, accentColor: "#ffffff" },
@@ -13,6 +14,7 @@ function createTestService() {
     let nextId = 1;
     const matches = (relation, where) => Object.entries(where).every(([key, value]) => {
         if (key === "OR") return value.some((condition) => matches(relation, condition));
+        if (key === "AND") return value.every((condition) => matches(relation, condition));
         return relation[key] === value;
     });
     const prisma = {
@@ -74,6 +76,28 @@ test("friend requests transition to friendship and list only public profile fiel
     assert.equal(list.friends[0].friendshipId, request.requestId);
     assert.equal("email" in list.friends[0], false);
     assert.equal(list.incomingRequests.length, 0);
+});
+
+test("friend pages use owner-scoped stable keyset ordering and return an opaque continuation", async () => {
+    const userId = users[0].id;
+    const relations = Array.from({ length: 3 }, (_, index) => ({
+        id: String(index + 1).padStart(24, "0"), requesterId: userId, addresseeId: users[1].id,
+        status: "ACCEPTED", createdAt: new Date(`2026-10-2${4 - index}T10:00:00.000Z`), updatedAt: new Date("2026-10-24T10:00:00.000Z"),
+    }));
+    let query;
+    const service = createFriendService({ friendship: { findMany: async (args) => { query = args; return args.where.AND.length === 1 ? relations : relations.slice(2); } } });
+    const first = await service.list(userId, { limit: 2 });
+    assert.equal(first.friends.length, 2);
+    assert.equal(first.pagination.hasMore, true);
+    assert.deepEqual(decodeCursor(first.pagination.nextCursor), { createdAt: relations[1].createdAt, id: relations[1].id });
+    assert.equal(query.take, 3);
+    assert.deepEqual(query.orderBy, [{ createdAt: "desc" }, { id: "desc" }]);
+    const second = await service.list(userId, { limit: 2, after: decodeCursor(first.pagination.nextCursor) });
+    assert.equal(second.friends.length, 1);
+    assert.equal(second.pagination.hasMore, false);
+    assert.equal(second.pagination.nextCursor, null);
+    assert.deepEqual(query.where.AND[0], { OR: [{ requesterId: userId }, { addresseeId: userId }] });
+    assert.deepEqual(query.where.AND[1], { OR: [{ createdAt: { lt: relations[1].createdAt } }, { createdAt: relations[1].createdAt, id: { lt: relations[1].id } }] });
 });
 
 test("friend requests reject self, missing users, and duplicate or reverse requests", async () => {

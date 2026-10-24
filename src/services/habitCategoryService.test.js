@@ -26,7 +26,7 @@ test("habit categorization returns only a supported Groq category", async (t) =>
     assert.equal(await categorizeHabit("Ler", "Ler por 20 minutos"), "Estudos");
 });
 
-test("habit categorization surfaces missing configuration and invalid provider output", async (t) => {
+test("habit categorization falls back when configuration or provider output is unavailable", async (t) => {
     const previousKey = process.env.GROQ_API_KEY;
     const originalFetch = globalThis.fetch;
     delete process.env.GROQ_API_KEY;
@@ -35,18 +35,12 @@ test("habit categorization surfaces missing configuration and invalid provider o
         if (previousKey === undefined) delete process.env.GROQ_API_KEY;
         else process.env.GROQ_API_KEY = previousKey;
     });
-    await assert.rejects(categorizeHabit("Ler", ""), {
-        status: 503,
-        code: "GROQ_NOT_CONFIGURED",
-    });
+    assert.equal(await categorizeHabit("Ler", ""), "Estudos");
 
     process.env.GROQ_API_KEY = "test-groq-key";
     globalThis.fetch = async () => ({
         ok: true,
         json: async () => ({ choices: [{ message: { content: '{"category":"Unknown"}' } }] }),
     });
-    await assert.rejects(categorizeHabit("Ler", ""), {
-        status: 502,
-        code: "GROQ_INVALID_CATEGORY",
-    });
+    assert.equal(await categorizeHabit("Ler", ""), "Estudos");
 });

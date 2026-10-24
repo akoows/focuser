@@ -1,54 +1,44 @@
 {
-  "name": "focuser",
-  "version": "0.0.1",
-  "description": "Focuser API created with NodeJS + Express",
-  "main": "index.js",
+  "name": "focuser-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API REST do Focuser V1 (hábitos, metas, sessões de foco, progresso e análise por IA)",
   "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js",
-    "db:generate": "prisma generate",
-    "test:api": "node --test"
+    "start": "node server.js",
+    "start:test": "node --env-file=.env.test server.js",
+    "dev": "node --watch server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:validate:test": "node --env-file=.env.test ./node_modules/prisma/build/index.js validate",
+    "db:push": "prisma db push",
+    "test": "node --test --test-concurrency=1 \"src/**/*.test.js\"",
+    "test:regression": "node --test --test-concurrency=1 \"tests-regression/**/*.test.js\"",
+    "test:db:integration": "node --env-file=.env.test --test --test-concurrency=1 test-integration/mongodb.test.js test-integration/habits-progress.test.js test-integration/goals-concurrency.test.js test-integration/focus-session-concurrency.test.js test-integration/books-pagination.test.js test-integration/gym-calendar.test.js test-integration/user-quotas.test.js test-integration/social-pagination.test.js",
+    "test:api": "npm test",
+    "test:unit": "npm test",
+    "audit": "npm audit --omit=dev"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/akoows/focuser.git"
-  },
-  "keywords": [
-    "express",
-    "nodejs",
-    "prisma",
-    "api"
-  ],
-  "author": "akoows",
-  "contributors": [
-    {
-      "name": "Davi-ux-max",
-      "url": "https://github.com/Davi-ux-max"
-    },
-    {
-      "name": "andresouzasilva8311-spec",
-      "url": "https://github.com/andresouzasilva8311-spec"
-    },
-    {
-      "name": "voante10",
-      "url": "https://github.com/voante10"
-    }
-  ],
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/akoows/focuser/issues"
-  },
-  "homepage": "https://github.com/akoows/focuser#readme",
   "dependencies": {
-    "@prisma/client": "^6.19.3",
-    "bcrypt": "^6.0.0",
+    "@prisma/client": "^6.16.0",
+    "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "prisma": "^6.19.3"
+    "prisma": "^6.16.0",
+    "supertest": "^7.0.0"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2"
   }
 }

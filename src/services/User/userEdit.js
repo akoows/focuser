@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
 import { secureUser } from "../../dtos/secureUser.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
+import { readIntegerSetting } from "../../config/env.js";
 
 export async function userEdit(userID, data) {
     try {
@@ -22,7 +23,7 @@ export async function userEdit(userID, data) {
             where: { id: userID },
             data: {
                 email: data.email ?? user.email,
-                pass: data.pass ? await bcrypt.hash(data.pass, 10) : user.pass
+                pass: data.pass ? await bcrypt.hash(data.pass, readIntegerSetting(process.env, "BCRYPT_COST", 12, { min: 4, max: 15 })) : user.pass
             }
         });
 
