@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { asyncHandler, HttpError, sendSuccess } from "../utils/apiResponse.js";
+import { friendService } from "../services/friendService.js";
 import { dateKeyInTimezone } from "../utils/date.js";
 import {
     focusSessionCreateSchema,
@@ -472,6 +473,43 @@ router.get("/reading/today", requireAuth, asyncHandler(async (req, res) => {
         totalMinutes: logs.reduce((total, log) => total + log.minutesRead, 0),
         items: logs.map((log) => mapReadingLog(log, booksById.get(log.bookId))),
     });
+}));
+
+router.get("/reading/feed", requireAuth, asyncHandler(async (req, res) => {
+    const { friends } = await friendService.list(req.user.id);
+    const userIds = [req.user.id, ...friends.map((friend) => friend.id)];
+    const logs = await prisma.readingLog.findMany({
+        where: { userId: { in: userIds } },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+    });
+    const bookIds = [...new Set(logs.map((log) => log.bookId))];
+    const loggedUserIds = [...new Set(logs.map((log) => log.userId))];
+    const [books, users] = await Promise.all([
+        bookIds.length ? prisma.readingBook.findMany({ where: { id: { in: bookIds } } }) : [],
+        loggedUserIds.length
+            ? prisma.user.findMany({
+                where: { id: { in: loggedUserIds } },
+                select: { id: true, name: true, username: true, avatarUrl: true },
+            })
+            : [],
+    ]);
+    const booksById = new Map(books.map((book) => [book.id, book]));
+    const usersById = new Map(users.map((user) => [user.id, user]));
+    const items = logs.flatMap((log) => {
+        const book = booksById.get(log.bookId);
+        const user = usersById.get(log.userId);
+        if (!book || !user || !user.username || user.username.startsWith("~unset:")) return [];
+        return [{
+            id: log.id,
+            loggedAt: log.createdAt,
+            pagesRead: log.pagesRead,
+            minutesRead: log.minutesRead,
+            book: { id: book.id, title: book.title, author: book.author, coverId: book.coverId, coverUrl: book.coverUrl },
+            user,
+        }];
+    });
+    return sendSuccess(res, { items });
 }));
 
 router.delete("/reading/books/:id", requireAuth, asyncHandler(async (req, res) => {

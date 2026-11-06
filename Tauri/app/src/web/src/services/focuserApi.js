@@ -1,9 +1,17 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/+$/, '');
+import { isTauri } from '@tauri-apps/api/core';
+
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://192.168.1.232:3000/api').replace(/\/+$/, '');
 
 async function request(endpoint, { method = 'GET', body, credentials = 'include' } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers['X-Focuser-Client'] = 'web';
+  const isDesktopApp = isTauri();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    headers['X-Focuser-Client'] = 'web';
+  }
+  if (isDesktopApp) headers['X-Focuser-Platform'] = 'tauri';
+  const authToken = isDesktopApp ? localStorage.getItem('focuser_auth_token') : null;
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
@@ -30,7 +38,14 @@ async function request(endpoint, { method = 'GET', body, credentials = 'include'
     throw apiError;
   }
 
-  return payload.data ?? payload;
+  const data = payload.data ?? payload;
+  if (isDesktopApp && typeof data?.token === 'string') {
+    localStorage.setItem('focuser_auth_token', data.token);
+  }
+  if (isDesktopApp && endpoint === '/auth/logout') {
+    localStorage.removeItem('focuser_auth_token');
+  }
+  return data;
 }
 
 export const focuserApi = {
@@ -48,6 +63,14 @@ export const focuserApi = {
   startPasswordChange: (data) => request('/users/me/password-change', { method: 'POST', body: data }),
   verifyPasswordChange: (data) => request('/users/me/password-change/verify', { method: 'POST', body: data }),
   publicProfile: (username) => request(`/users/by-username/${encodeURIComponent(username)}`),
+  friends: {
+    list: () => request('/friends'),
+    status: (username) => request(`/friends/status/${encodeURIComponent(username)}`),
+    sendRequest: (username) => request('/friends/requests', { method: 'POST', body: { username } }),
+    acceptRequest: (id) => request(`/friends/requests/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
+    removeRequest: (id) => request(`/friends/requests/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    removeFriend: (id) => request(`/friends/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
   dashboard: (date) => request(date ? `/dashboard?date=${encodeURIComponent(date)}` : '/dashboard'),
   progress: (period = 'week') => request(`/progress?period=${period}`),
   history: (period = 'week') => request(`/progress/history?period=${period}`),
@@ -76,6 +99,7 @@ export const focuserApi = {
   },
   reading: {
     today: () => request('/reading/today'),
+    feed: () => request('/reading/feed'),
     lookupIsbn: (data) => request('/reading/isbn-lookup', { method: 'POST', body: data }),
     listBooks: (params = {}) => {
       const query = new URLSearchParams(params).toString();

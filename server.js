@@ -53,9 +53,14 @@ app.use((req, res, next) => {
     next();
 });
 
+app.get("/", (_req, res) => res.json({
+    success: true,
+    data: { service: "Focuser API", status: "ok", apiBasePath: "/api" },
+}));
+
 app.use("/api", (req, res, next) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(req.method)
-        && req.get("X-Focuser-Client") !== "web") {
+        && !["web", "tauri"].includes(req.get("X-Focuser-Client"))) {
         return res.status(403).json({
             success: false,
             error: { code: "CSRF_PROTECTION", message: "Cabeçalho de proteção CSRF ausente." },
@@ -81,7 +86,7 @@ app.use((error, req, res, _next) => {
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || "development";
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
     console.log("\n========================================");
     console.log("🚀 SERVIDOR INICIALIZADO COM SUCESSO");
     console.log("========================================");

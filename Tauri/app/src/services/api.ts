@@ -1,4 +1,6 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api")
+import { isTauri } from "@tauri-apps/api/core";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://192.168.1.232:3000/api")
   .replace(/\/+$/, "");
 
 type RequestOptions = {
@@ -37,9 +39,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET";
   const headers = new Headers({ Accept: "application/json" });
+  const isDesktopApp = isTauri();
 
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
   if (method !== "GET") headers.set("X-Focuser-Client", "web");
+  if (isDesktopApp) headers.set("X-Focuser-Platform", "tauri");
+  const authToken = isDesktopApp ? localStorage.getItem("focuser_auth_token") : null;
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
 
   let response: Response;
   try {
@@ -86,5 +92,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new ApiError("A API retornou uma resposta em formato inesperado.", response.status, undefined);
   }
 
-  return (payload as ApiEnvelope<T>).data;
+  const data = (payload as ApiEnvelope<T> & { data: T & { token?: string } }).data;
+  if (isDesktopApp && typeof data?.token === "string") {
+    localStorage.setItem("focuser_auth_token", data.token);
+  }
+  if (isDesktopApp && path === "/auth/logout") {
+    localStorage.removeItem("focuser_auth_token");
+  }
+
+  return data;
 }

@@ -29,18 +29,21 @@ npm run android:dev
 
 O comando fixa o host de desenvolvimento no IP Wi-Fi `192.168.15.14` deste PC,
 evitando que o Tauri escolha o endereço de outra interface de rede. Se o IP do
-PC mudar, atualize o endereço no script `android:dev` em `package.json`.
+PC mudar, atualize o endereço no script `android:dev` em `package.json` e
+adicione a origem `http://<IP-DO-PC>:1420` à variável `CORS_ORIGINS` da API.
 
-Por padrão, o cliente usa `http://localhost:3000/api`. Para apontar para outra
+Por padrão, o cliente usa `http://192.168.1.232:3000/api`. Para apontar para outra
 instância, crie `Tauri/app/.env` com:
 
 ```dotenv
-VITE_API_URL=http://localhost:3000/api
+VITE_API_URL=http://192.168.1.232:3000/api
 ```
 
-A API deve permitir a origem do WebView Tauri e habilitar credenciais de cookie.
-O cliente usa `credentials: include` e envia `X-Focuser-Client: web` nas
-requisições mutáveis.
+A API deve permitir a origem do WebView Tauri. No app Tauri, a sessão usa um
+token Bearer armazenado localmente, adequado ao acesso à API por HTTP na rede
+local; clientes web continuam usando o cookie HttpOnly. As requisições mutáveis
+do app enviam `X-Focuser-Client: web` para compatibilidade com servidores
+anteriores e `X-Focuser-Platform: tauri` para receber o token de sessão.
 
 ## Validar
 

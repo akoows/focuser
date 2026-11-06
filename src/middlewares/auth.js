@@ -9,6 +9,12 @@ function hasStrongJwtSecret() {
     return typeof JWT_SECRET === "string" && Buffer.byteLength(JWT_SECRET, "utf8") >= 32;
 }
 
+function getRequestToken(req) {
+    const authorization = req.get("Authorization");
+    if (authorization?.startsWith("Bearer ")) return authorization.slice(7);
+    return req.cookies?.[AUTH_COOKIE];
+}
+
 export function createAuthToken(user) {
     if (!hasStrongJwtSecret()) {
         throw new HttpError(500, "AUTH_NOT_CONFIGURED", "Configure JWT_SECRET com ao menos 32 bytes.");
@@ -24,7 +30,7 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
     if (!hasStrongJwtSecret()) {
         throw new HttpError(500, "AUTH_NOT_CONFIGURED", "Configure JWT_SECRET com ao menos 32 bytes.");
     }
-    const token = req.cookies?.[AUTH_COOKIE];
+    const token = getRequestToken(req);
     if (!token) throw new HttpError(401, "UNAUTHENTICATED", "Faça login para continuar.");
 
     let claims;
@@ -51,7 +57,7 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
 });
 
 export async function optionalAuth(req) {
-    const token = req.cookies?.[AUTH_COOKIE];
+    const token = getRequestToken(req);
     if (!token || !hasStrongJwtSecret()) return null;
 
     let claims;

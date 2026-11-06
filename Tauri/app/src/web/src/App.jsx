@@ -1,9 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   Activity,
-  ArrowUpRight,
   BarChart3,
   BookOpen,
   Check,
@@ -24,6 +21,7 @@ import {
   Plus,
   Play,
   Search,
+  Settings,
   Shrink,
   ShieldCheck,
   Target,
@@ -31,10 +29,15 @@ import {
   TrendingUp,
   Trophy,
   User,
+  UserMinus,
+  UserPlus,
+  Users,
   VolumeX,
   Waves,
   X,
 } from 'lucide-react';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { HashRouter, Navigate, NavLink, Route, Routes, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { focuserApi } from './services/focuserApi';
 import AcademyPage from './pages/AcademyPage.jsx';
@@ -408,9 +411,9 @@ function AppSidebar() {
     { label: 'Metas', icon: Target, to: '/app/metas' },
     { label: 'Leituras', icon: BookOpen, to: '/app/leituras' },
     { label: 'Academia', icon: Dumbbell, to: '/app/academia' },
+    { label: 'Amigos', icon: Users, to: '/app/amigos' },
     { label: 'Análises', icon: BarChart3, to: '/app/analises' },
-    { label: 'Perfil', icon: User, to: '/app/perfil' },
-    { label: 'Encontrar perfis', icon: Search, to: '/pessoas' },
+    { label: 'Configurações', icon: Settings, to: '/app/configuracoes' },
   ];
 
   return (
@@ -427,28 +430,13 @@ function AppSidebar() {
         </nav>
       </div>
       <div className="sidebar-footer">
-        {user?.username ? (
-          <Link
-            className="user-badge public-profile-card-link"
-            to={`/u/${encodeURIComponent(user.username)}`}
-            aria-label={`Ver perfil público de ${user.name || user.username}`}
-          >
-            <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <User size={16} />}</div>
-            <div className="public-profile-card-copy">
-              <strong>{user?.name || user?.email}</strong>
-              <small>@{user.username}</small>
-              <span>Ver perfil público <ArrowUpRight size={14} /></span>
-            </div>
-          </Link>
-        ) : (
-          <div className="user-badge">
-            <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <User size={16} />}</div>
-            <div>
-              <strong>{user?.name || user?.email}</strong>
-              <small>{user?.email}</small>
-            </div>
+        <Link className="user-badge" to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/app/perfil'} aria-label={`Abrir perfil de ${user?.name || user?.email || 'usuário'}`}>
+          <div className="avatar">{user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <User size={16} />}</div>
+          <div>
+            <strong>{user?.name || user?.email}</strong>
+            <small>{user?.username ? `@${user.username}` : user?.email}</small>
           </div>
-        )}
+        </Link>
         {logoutError ? <small className="error-text" role="alert">{logoutError}</small> : null}
         <button type="button" className="logout-button" onClick={async () => {
           setLogoutError('');
@@ -465,6 +453,7 @@ function AppSidebar() {
 }
 
 function AppLayout({ children }) {
+  const { user } = useAuth();
   return (
     <div className="app-shell">
       <AppSidebar />
@@ -479,8 +468,10 @@ function AppLayout({ children }) {
           <NavLink to="/app/metas" aria-label="Metas" title="Metas" className="mobile-nav-item"><Target size={19} strokeWidth={1.8} /><span>Metas</span></NavLink>
           <NavLink to="/app/leituras" aria-label="Leituras" title="Leituras" className="mobile-nav-item"><BookOpen size={19} strokeWidth={1.8} /><span>Leituras</span></NavLink>
           <NavLink to="/app/academia" aria-label="Academia" title="Academia" className="mobile-nav-item"><Dumbbell size={19} strokeWidth={1.8} /><span>Academia</span></NavLink>
+          <NavLink to="/app/amigos" aria-label="Amigos" title="Amigos" className="mobile-nav-item"><Users size={19} strokeWidth={1.8} /><span>Amigos</span></NavLink>
           <NavLink to="/app/analises" aria-label="Análises" title="Análises" className="mobile-nav-item"><BarChart3 size={19} strokeWidth={1.8} /><span>Análises</span></NavLink>
-          <NavLink to="/app/perfil" aria-label="Perfil" title="Perfil" className="mobile-nav-item"><User size={19} strokeWidth={1.8} /><span>Perfil</span></NavLink>
+          <NavLink to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/app/perfil'} aria-label="Perfil" title="Perfil" className="mobile-nav-item"><User size={19} strokeWidth={1.8} /><span>Perfil</span></NavLink>
+          <NavLink to="/app/configuracoes" aria-label="Configurações" title="Configurações" className="mobile-nav-item"><Settings size={19} strokeWidth={1.8} /><span>Ajustes</span></NavLink>
         </nav>
       </main>
     </div>
@@ -1174,21 +1165,112 @@ function PublicBookCard({ title, book }) {
   );
 }
 
+function formatReadingDuration(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (!hours) return `${minutes} min`;
+  if (!remainingMinutes) return `${hours} h`;
+  return `${hours} h ${remainingMinutes} min`;
+}
+
 function PublicProfilePage() {
   const { username } = useParams();
   const normalized = (username || '').toLowerCase();
+  const { user, isCheckingSession, hasCheckedSession } = useAuth();
+  const navigate = useNavigate();
   const [result, setResult] = useState(null);
+  const [relationship, setRelationship] = useState(null);
+  const [friendActionError, setFriendActionError] = useState('');
+  const [isFriendActionBusy, setIsFriendActionBusy] = useState(false);
+  const [isCustomizationOpen, setIsCustomizationOpen] = useState(false);
+  const [profileRefreshError, setProfileRefreshError] = useState('');
 
   useEffect(() => {
     let active = true;
-    focuserApi.publicProfile(normalized)
-      .then(({ profile }) => { if (active) setResult({ username: normalized, profile }); })
-      .catch((error) => { if (active) setResult({ username: normalized, error }); });
-    return () => { active = false; };
+    let hasLoadedProfile = false;
+    const loadProfile = async () => {
+      try {
+        const { profile } = await focuserApi.publicProfile(normalized);
+        if (!active) return;
+        hasLoadedProfile = true;
+        setResult({ username: normalized, profile });
+        setProfileRefreshError('');
+      } catch (error) {
+        if (!active) return;
+        if (hasLoadedProfile) setProfileRefreshError(error.message);
+        else setResult({ username: normalized, error });
+      }
+    };
+    loadProfile();
+    const refreshInterval = window.setInterval(loadProfile, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(refreshInterval);
+    };
   }, [normalized]);
 
   const currentResult = result?.username === normalized ? result : null;
   const profile = currentResult?.profile;
+  const viewerUsername = user?.username;
+  const refreshPublicProfile = useCallback(async (nextUsername) => {
+    const targetUsername = nextUsername || profile?.username;
+    if (!targetUsername) return;
+    try {
+      const { profile: updatedProfile } = await focuserApi.publicProfile(targetUsername);
+      setResult({ username: targetUsername, profile: updatedProfile });
+      if (targetUsername !== normalized) navigate(`/u/${encodeURIComponent(targetUsername)}`, { replace: true });
+    } catch (error) {
+      setResult({ username: targetUsername, error });
+    }
+  }, [navigate, normalized, profile?.username]);
+
+  useEffect(() => {
+    if (!isCustomizationOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setIsCustomizationOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isCustomizationOpen]);
+
+  useEffect(() => {
+    let active = true;
+    const profileUsername = profile?.username;
+    if (!profileUsername || !viewerUsername || profileUsername === viewerUsername) return () => { active = false; };
+    focuserApi.friends.status(profileUsername)
+      .then(({ relationship: currentRelationship }) => { if (active) setRelationship({ username: profileUsername, ...currentRelationship }); })
+      .catch((error) => { if (active) setFriendActionError(error.message); });
+    return () => { active = false; };
+  }, [profile?.username, viewerUsername]);
+  const currentRelationship = relationship?.username === profile?.username ? relationship : null;
+
+  const performFriendAction = async (action) => {
+    if (!profile || isFriendActionBusy) return;
+    setIsFriendActionBusy(true);
+    setFriendActionError('');
+    try {
+      if (action === 'send') await focuserApi.friends.sendRequest(profile.username);
+      else if (action === 'accept') await focuserApi.friends.acceptRequest(currentRelationship.requestId);
+      else if (action === 'remove') {
+        if (currentRelationship.status === 'SENT' || currentRelationship.status === 'RECEIVED') {
+          await focuserApi.friends.removeRequest(currentRelationship.requestId);
+        } else {
+          await focuserApi.friends.removeFriend(profile.id);
+        }
+      }
+      const { relationship: nextRelationship } = await focuserApi.friends.status(profile.username);
+      setRelationship({ username: profile.username, ...nextRelationship });
+    } catch (error) {
+      setFriendActionError(error.message);
+    } finally {
+      setIsFriendActionBusy(false);
+    }
+  };
   const profileAccentColor = /^#[\da-f]{6}$/i.test(profile?.accentColor || '') ? profile.accentColor : '#ffffff';
 
   return (
@@ -1216,7 +1298,58 @@ function PublicProfilePage() {
                   <p><span aria-hidden="true">@</span>{profile.username}</p>
                 </div>
                 <span className="public-profile-badge"><span aria-hidden="true" />Perfil público</span>
+                {profile.username === user?.username ? (
+                  <button
+                    type="button"
+                    className="public-profile-edit-button"
+                    aria-label="Editar personalização do perfil"
+                    title="Editar perfil"
+                    onClick={() => setIsCustomizationOpen(true)}
+                  >
+                    <Pencil size={17} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <div className="public-profile-friend-action">
+                    {user ? currentRelationship?.status === 'FRIENDS' ? (
+                      <button type="button" className="button button-secondary" disabled={isFriendActionBusy} onClick={() => performFriendAction('remove')}>
+                        <UserMinus size={16} /> {isFriendActionBusy ? 'Aguarde…' : 'Remover amigo'}
+                      </button>
+                    ) : currentRelationship?.status === 'SENT' ? (
+                      <button type="button" className="button button-secondary" disabled={isFriendActionBusy} onClick={() => performFriendAction('remove')}>
+                        {isFriendActionBusy ? 'Aguarde…' : 'Cancelar pedido'}
+                      </button>
+                    ) : currentRelationship?.status === 'RECEIVED' ? (
+                      <>
+                        <button type="button" className="button button-primary" disabled={isFriendActionBusy} onClick={() => performFriendAction('accept')}>
+                          <Check size={16} /> Aceitar pedido
+                        </button>
+                        <button type="button" className="button button-secondary" disabled={isFriendActionBusy} onClick={() => performFriendAction('remove')}>Recusar</button>
+                      </>
+                    ) : currentRelationship?.status === 'NONE' ? (
+                      <button type="button" className="button button-primary" disabled={isFriendActionBusy} onClick={() => performFriendAction('send')}>
+                        <UserPlus size={16} /> Adicionar amigo
+                      </button>
+                    ) : <span className="public-profile-action-status" role="status">{friendActionError ? 'Não foi possível verificar' : isCheckingSession || !currentRelationship ? 'Carregando…' : ''}</span> : hasCheckedSession ? (
+                      <Link className="button button-primary" to="/login"><UserPlus size={16} /> Adicionar amigo</Link>
+                    ) : null}
+                    {friendActionError ? <small className="error-text" role="alert">{friendActionError}</small> : null}
+                  </div>
+                )}
               </div>
+              {profile.status === 'FOCUS' ? (
+                <section className="public-profile-focus-status" aria-label="Status atual">
+                  <span className="public-profile-focus-indicator"><span aria-hidden="true" />Em foco</span>
+                  <div className="public-profile-focus-book">
+                    <BookOpen size={18} aria-hidden="true" />
+                    <div>
+                      <small>Lendo agora</small>
+                      <strong>{profile.currentBook?.title || 'Livro não informado'}</strong>
+                      {profile.currentBook?.author ? <span>{profile.currentBook.author}</span> : null}
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+              {profileRefreshError ? <p className="public-profile-refresh-error" role="status">Não foi possível atualizar o status em tempo real: {profileRefreshError}</p> : null}
               <section className="public-profile-about" aria-labelledby="public-profile-about-title">
                 <h2 id="public-profile-about-title">Sobre</h2>
                 {profile.bio
@@ -1241,11 +1374,242 @@ function PublicProfilePage() {
                 <p className="card public-profile-empty muted-state">Este perfil ainda não compartilhou livros.</p>
               )}
             </section>
-            <Link className="public-profile-back" to="/pessoas">Encontrar outro perfil</Link>
+            <section className="public-profile-history" aria-labelledby="public-profile-history-title">
+              <div className="public-profile-section-heading">
+                <div>
+                  <p className="eyebrow">atividade</p>
+                  <h2 id="public-profile-history-title">Histórico de leitura</h2>
+                </div>
+                <Clock3 size={22} aria-hidden="true" />
+              </div>
+              {profile.readingHistory?.length ? (
+                <ol className="public-reading-history">
+                  {profile.readingHistory.map((entry) => (
+                    <li className="public-reading-history-entry" key={entry.id}>
+                      <span className="public-reading-history-icon"><BookOpen size={17} aria-hidden="true" /></span>
+                      <div className="public-reading-history-book">
+                        <strong>{entry.book.title}</strong>
+                        {entry.book.author ? <span>{entry.book.author}</span> : null}
+                        <small>{new Date(entry.loggedAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })} · {entry.pagesRead} pág.</small>
+                      </div>
+                      <span className="public-reading-history-duration"><Clock3 size={14} aria-hidden="true" />{formatReadingDuration(entry.minutesRead)}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="card public-profile-empty muted-state">Ainda não há leituras registradas.</p>
+              )}
+            </section>
           </div>
         </> : null}
       </main>
+      {isCustomizationOpen && profile?.username === user?.username ? (
+        <div className="profile-customization-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setIsCustomizationOpen(false);
+        }}>
+          <section className="profile-customization-panel" role="dialog" aria-modal="true" aria-labelledby="profile-customization-title">
+            <ProfilePage
+              key={user?.id || user?.username}
+              embedded
+              onClose={() => setIsCustomizationOpen(false)}
+              onProfileUpdated={refreshPublicProfile}
+            />
+          </section>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function FriendAvatar({ person }) {
+  return (
+    <span className="friend-avatar">
+      {person.avatarUrl ? <img src={person.avatarUrl} alt="" /> : <User size={20} aria-hidden="true" />}
+    </span>
+  );
+}
+
+function FriendPersonCard({ person, subtitle, actions, className = '' }) {
+  const content = (
+    <>
+      <FriendAvatar person={person} />
+      <span className="friend-person-copy">
+        <strong>{person.name}</strong>
+        <small>{person.username ? `@${person.username}` : subtitle}</small>
+      </span>
+    </>
+  );
+  return (
+    <article className={`card friend-person-card ${className}`}>
+      {person.username ? <Link className="friend-person-link" to={`/u/${encodeURIComponent(person.username)}`}>{content}</Link> : <div className="friend-person-link">{content}</div>}
+      {subtitle && person.username ? <small className="friend-person-meta">{subtitle}</small> : null}
+      {actions ? <div className="friend-person-actions">{actions}</div> : null}
+    </article>
+  );
+}
+
+function FriendsPage() {
+  const navigate = useNavigate();
+  const [hub, setHub] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busyKey, setBusyKey] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    focuserApi.friends.list()
+      .then((result) => { if (active) setHub(result); })
+      .catch((requestError) => { if (active) setError(requestError.message); })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const performAction = async (key, action) => {
+    if (busyKey) return;
+    setBusyKey(key);
+    setError('');
+    try {
+      await action();
+      setHub(await focuserApi.friends.list());
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const pendingCount = hub?.incomingRequests.length || 0;
+
+  return (
+    <AppLayout>
+      <PageHeader
+        title="Amigos"
+        eyebrow="Comunidade"
+        subtitle="Conecte-se com pessoas e acompanhe seus pedidos de amizade."
+        action={<button type="button" className="button button-primary" onClick={() => navigate('/pessoas')}><UserPlus size={17} /> Encontrar pessoas</button>}
+      />
+      {error ? <p className="error-text friends-error" role="alert">{error}</p> : null}
+      {isLoading ? <div className="card state-card" role="status">Carregando sua central de amigos…</div> : null}
+      {!isLoading && !error && hub ? (
+        <div className="friends-hub">
+          <section className="friends-section" aria-labelledby="incoming-friends-heading">
+            <header className="friends-section-heading">
+              <div><p className="eyebrow">Pedidos</p><h2 id="incoming-friends-heading">Recebidos</h2></div>
+              <span className="friends-count">{pendingCount}</span>
+            </header>
+            {hub.incomingRequests.length ? (
+              <div className="friends-people-grid">
+                {hub.incomingRequests.map((person) => (
+                  <FriendPersonCard
+                    key={person.requestId}
+                    person={person}
+                    subtitle="Quer adicionar você"
+                    className="friend-request-card"
+                    actions={<>
+                      <button type="button" className="button button-primary" disabled={Boolean(busyKey)} onClick={() => performAction(person.requestId, () => focuserApi.friends.acceptRequest(person.requestId))}>
+                        <Check size={15} /> {busyKey === person.requestId ? 'Aguarde…' : 'Aceitar'}
+                      </button>
+                      <button type="button" className="button button-secondary" disabled={Boolean(busyKey)} onClick={() => performAction(person.requestId, () => focuserApi.friends.removeRequest(person.requestId))}>Recusar</button>
+                    </>}
+                  />
+                ))}
+              </div>
+            ) : <p className="card friends-empty muted-state">Você não tem pedidos recebidos.</p>}
+          </section>
+
+          <section className="friends-section" aria-labelledby="friends-list-heading">
+            <header className="friends-section-heading">
+              <div><p className="eyebrow">Sua rede</p><h2 id="friends-list-heading">Meus amigos</h2></div>
+              <span className="friends-count">{hub.friends.length}</span>
+            </header>
+            {hub.friends.length ? (
+              <div className="friends-people-grid">
+                {hub.friends.map((person) => (
+                  <FriendPersonCard
+                    key={person.friendshipId}
+                    person={person}
+                    subtitle="Amigo"
+                    className="friend-list-card"
+                    actions={<button type="button" className="button button-secondary" disabled={Boolean(busyKey)} onClick={() => performAction(person.friendshipId, () => focuserApi.friends.removeFriend(person.id))}>
+                      <UserMinus size={15} /> {busyKey === person.friendshipId ? 'Aguarde…' : 'Remover'}
+                    </button>}
+                  />
+                ))}
+              </div>
+            ) : <p className="card friends-empty muted-state">Sua lista está vazia. Encontre pessoas para começar a se conectar.</p>}
+          </section>
+
+          <section className="friends-section" aria-labelledby="outgoing-friends-heading">
+            <header className="friends-section-heading">
+              <div><p className="eyebrow">Aguardando</p><h2 id="outgoing-friends-heading">Pedidos enviados</h2></div>
+              <span className="friends-count">{hub.outgoingRequests.length}</span>
+            </header>
+            {hub.outgoingRequests.length ? (
+              <div className="friends-people-grid">
+                {hub.outgoingRequests.map((person) => (
+                  <FriendPersonCard
+                    key={person.requestId}
+                    person={person}
+                    subtitle="Aguardando resposta"
+                    className="friend-outgoing-card"
+                    actions={<button type="button" className="button button-secondary" disabled={Boolean(busyKey)} onClick={() => performAction(person.requestId, () => focuserApi.friends.removeRequest(person.requestId))}>
+                      {busyKey === person.requestId ? 'Aguarde…' : 'Cancelar pedido'}
+                    </button>}
+                  />
+                ))}
+              </div>
+            ) : <p className="card friends-empty muted-state">Você não enviou pedidos pendentes.</p>}
+          </section>
+        </div>
+      ) : null}
+    </AppLayout>
+  );
+}
+
+function DashboardFriends() {
+  const [friends, setFriends] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    focuserApi.friends.list()
+      .then((result) => { if (active) setFriends(result.friends); })
+      .catch((requestError) => { if (active) setError(requestError.message); });
+    return () => { active = false; };
+  }, []);
+
+  return (
+    <section className="card dashboard-friends" aria-labelledby="dashboard-friends-title">
+      <header className="dashboard-friends-heading">
+        <div>
+          <p className="eyebrow">Comunidade</p>
+          <h3 id="dashboard-friends-title">Amigos</h3>
+        </div>
+        <Link className="text-button" to="/app/amigos">Ver todos</Link>
+      </header>
+      {error ? <p className="error-text" role="alert">Não foi possível carregar seus amigos: {error}</p> : null}
+      {!error && !friends ? <p className="muted-state" role="status">Carregando amigos…</p> : null}
+      {!error && friends?.length ? (
+        <div className="dashboard-friends-list">
+          {friends.slice(0, 5).map((person) => (
+            <Link className="dashboard-friend" key={person.friendshipId} to={`/u/${encodeURIComponent(person.username)}`}>
+              <FriendAvatar person={person} />
+              <span className="dashboard-friend-copy">
+                <strong>{person.name}</strong>
+                <small>@{person.username}</small>
+              </span>
+            </Link>
+          ))}
+          {friends.length > 5 ? <p className="muted-state dashboard-friends-more">e mais {friends.length - 5} {friends.length - 5 === 1 ? 'amigo' : 'amigos'}</p> : null}
+        </div>
+      ) : null}
+      {!error && friends && friends.length === 0 ? (
+        <div className="dashboard-friends-empty">
+          <p className="muted-state">Sua lista ainda está vazia.</p>
+          <Link to="/pessoas">Encontrar pessoas</Link>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1279,11 +1643,7 @@ function DashboardPage() {
         </section>
         <section className="main-grid">
           <FocusTimer />
-          <article className="card motivation-card">
-            <p className="eyebrow">Foco</p>
-            <h3>Concentre-se em uma tarefa por vez.</h3>
-            <p>Inicie uma sessão, associe-a a uma meta e acompanhe o tempo registrado na sua conta.</p>
-          </article>
+          <DashboardFriends />
         </section>
         <section className="card today-list">
           <div className="section-heading"><h3>Hábitos de hoje</h3><span className="metric-label">{dashboard?.date}</span></div>
@@ -1515,6 +1875,20 @@ function ReadingBookCover({ book }) {
   );
 }
 
+function ReadingFeedCover({ book }) {
+  const coverSource = book.coverUrl || (book.coverId
+    ? `https://covers.openlibrary.org/b/id/${book.coverId}-S.jpg`
+    : null);
+  const [hasCover, setHasCover] = useState(Boolean(coverSource));
+  return (
+    <span className="reading-feed-cover">
+      {coverSource && hasCover
+        ? <img src={coverSource} alt="" loading="lazy" onError={() => setHasCover(false)} />
+        : <BookOpen size={18} aria-hidden="true" />}
+    </span>
+  );
+}
+
 function ProfileBookPicker({ id, title, description, books, value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedBook = books.find((book) => book.id === value);
@@ -1682,8 +2056,12 @@ function ReadingSoundPicker({ value, onChange }) {
 }
 
 function ReadingLibrary() {
+  const { user } = useAuth();
   const [books, setBooks] = useState([]);
   const [today, setToday] = useState(null);
+  const [readingFeed, setReadingFeed] = useState([]);
+  const [isFeedLoading, setIsFeedLoading] = useState(true);
+  const [feedError, setFeedError] = useState('');
   const [filter, setFilter] = useState('active');
   const [showBookForm, setShowBookForm] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
@@ -1693,7 +2071,6 @@ function ReadingLibrary() {
   const [sessionForm, setSessionForm] = useState({ pagesRead: '' });
   const [sessionClock, setSessionClock] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [focusNotice, setFocusNotice] = useState('');
   const [bookForm, setBookForm] = useState({ title: '', author: '', isbn: '', coverId: null, coverUrl: null, totalPages: '', currentPage: '0' });
   const [coverOptions, setCoverOptions] = useState([]);
   const [coverSources, setCoverSources] = useState(null);
@@ -1704,6 +2081,19 @@ function ReadingLibrary() {
   const sessionPanelRef = useRef(null);
   const ambientAudioRef = useRef(null);
   const wakeLockRef = useRef(null);
+
+  const loadReadingFeed = useCallback(async () => {
+    setIsFeedLoading(true);
+    setFeedError('');
+    try {
+      const response = await focuserApi.reading.feed();
+      setReadingFeed(response.items);
+    } catch (requestError) {
+      setFeedError(requestError.message);
+    } finally {
+      setIsFeedLoading(false);
+    }
+  }, []);
 
   const loadReading = useCallback(async () => {
     setIsLoading(true);
@@ -1721,6 +2111,21 @@ function ReadingLibrary() {
       setIsLoading(false);
     }
   }, [filter]);
+
+  useEffect(() => {
+    let active = true;
+    focuserApi.reading.feed()
+      .then((response) => {
+        if (active) setReadingFeed(response.items);
+      })
+      .catch((requestError) => {
+        if (active) setFeedError(requestError.message);
+      })
+      .finally(() => {
+        if (active) setIsFeedLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2044,7 +2449,7 @@ function ReadingLibrary() {
       setIsFinishingSession(false);
       setSessionForm({ pagesRead: '' });
       setFocusNotice('');
-      await loadReading();
+      await Promise.all([loadReading(), loadReadingFeed()]);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -2103,6 +2508,87 @@ function ReadingLibrary() {
         <MetricCard label="Tempo hoje" value={`${today?.totalMinutes ?? '—'} min`} hint="Minutos de leitura" icon={Clock3} />
         <MetricCard label="Livros na lista" value={books.length} hint={filter === 'active' ? 'Em leitura' : 'Nesta categoria'} icon={BookOpen} />
       </section>
+      <section className="reading-feed-section" aria-labelledby="reading-feed-title">
+        <div className="reading-feed-heading">
+          <div className="reading-feed-title-group">
+            <span className="reading-feed-community-icon"><Users size={20} aria-hidden="true" /></span>
+            <div>
+              <p className="eyebrow">seu círculo de leitura</p>
+              <h2 id="reading-feed-title">Comunidade</h2>
+              <p className="muted-state">Um pouco do que você e seus amigos estão lendo.</p>
+            </div>
+          </div>
+          <div className="reading-feed-heading-actions">
+            {!isFeedLoading && !feedError && readingFeed.length ? <span className="reading-feed-count">{readingFeed.length} recentes</span> : null}
+            <button type="button" className="button button-secondary reading-feed-refresh" onClick={loadReadingFeed} disabled={isFeedLoading}>
+              <Activity size={15} aria-hidden="true" />{isFeedLoading ? 'Atualizando…' : 'Atualizar'}
+            </button>
+          </div>
+        </div>
+        {feedError ? (
+          <div className="reading-feed-state reading-feed-error" role="alert">
+            <span className="reading-feed-state-icon"><Activity size={19} aria-hidden="true" /></span>
+            <div>
+              <strong>O feed não carregou</strong>
+              <p>{feedError}</p>
+            </div>
+            <button type="button" className="button button-secondary" onClick={loadReadingFeed} disabled={isFeedLoading}>Tentar novamente</button>
+          </div>
+        ) : isFeedLoading ? (
+          <div className="reading-feed-skeleton-list" role="status" aria-label="Carregando leituras recentes">
+            {[0, 1, 2].map((item) => (
+              <div className="reading-feed-skeleton" key={item} aria-hidden="true">
+                <span className="reading-feed-skeleton-avatar" />
+                <span className="reading-feed-skeleton-content">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="reading-feed-skeleton-stats"><i /><i /></span>
+              </div>
+            ))}
+          </div>
+        ) : readingFeed.length ? (
+          <ol className="reading-feed-list">
+            {readingFeed.map((entry) => (
+              <li className="reading-feed-item" key={entry.id}>
+                <Link className="reading-feed-reader" to={`/u/${encodeURIComponent(entry.user.username)}`} aria-label={`Ver perfil de ${entry.user.name}`}>
+                  {entry.user.avatarUrl
+                    ? <img src={entry.user.avatarUrl} alt="" loading="lazy" />
+                    : <User size={19} aria-hidden="true" />}
+                </Link>
+                <div className="reading-feed-content">
+                  <div className="reading-feed-person">
+                    <Link to={`/u/${encodeURIComponent(entry.user.username)}`}>{entry.user.id === user?.id ? 'Você' : entry.user.name}</Link>
+                    <span>registrou uma leitura</span>
+                    <time dateTime={entry.loggedAt}>{new Date(entry.loggedAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</time>
+                  </div>
+                  <div className="reading-feed-book">
+                    <ReadingFeedCover book={entry.book} />
+                    <span className="reading-feed-book-info">
+                      <strong>{entry.book.title}</strong>
+                      {entry.book.author ? <small>{entry.book.author}</small> : null}
+                    </span>
+                  </div>
+                </div>
+                <div className="reading-feed-stats">
+                  <span className="reading-feed-pages">{entry.pagesRead} pág.</span>
+                  <span className="reading-feed-duration"><Clock3 size={14} aria-hidden="true" />{formatReadingDuration(entry.minutesRead)}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="reading-feed-state reading-feed-empty">
+            <span className="reading-feed-state-icon"><BookOpen size={22} aria-hidden="true" /></span>
+            <div>
+              <strong>Seu círculo ainda está em silêncio</strong>
+              <p>Quando você ou seus amigos registrarem uma leitura, ela aparecerá aqui.</p>
+            </div>
+            <Link className="button button-secondary" to="/app/amigos"><Users size={16} aria-hidden="true" />Ver amigos</Link>
+          </div>
+        )}
+      </section>
       <div className="filter-row" role="group" aria-label="Filtrar livros">
         {[['active', 'Lendo'], ['archived', 'Finalizados/arquivados'], ['all', 'Todos']].map(([value, label]) => (
           <button key={value} type="button" className={`filter-chip ${filter === value ? 'active' : ''}`} onClick={() => { setIsLoading(true); setError(''); setFilter(value); }}>{label}</button>
@@ -2160,7 +2646,6 @@ function ReadingLibrary() {
                 <ReadingSoundPicker value={readingSession.sound} onChange={changeReadingSound} />
                 <button type="button" className="focus-finish-button" onClick={finishReadingSession}><Check size={17} strokeWidth={2} /> Finalizar sessão</button>
               </div>
-              {focusNotice ? <p className="session-notice" role="status">{focusNotice}</p> : null}
             </form>
           ) : (
             isFinishingSession ? (
@@ -2431,9 +2916,6 @@ function AnalyticsPage() {
   const [history, setHistory] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [analysis, setAnalysis] = useState(null);
-  const [analysisError, setAnalysisError] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -2452,38 +2934,17 @@ function AnalyticsPage() {
     return () => { active = false; };
   }, [period]);
 
-  const analyzeHabits = async () => {
-    if (isAnalyzing) return;
-    setIsAnalyzing(true);
-    setAnalysisError('');
-    setAnalysis(null);
-    try {
-      setAnalysis(await focuserApi.analyzeHabits(period));
-    } catch (requestError) {
-      setAnalysisError(requestError.message);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
   return (
     <AppLayout>
       <PageHeader title="Análises" subtitle="seu progresso de hábitos." action={
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select className="period-select" value={period} onChange={(event) => {
-            setIsLoading(true);
-            setError('');
-            setAnalysis(null);
-            setAnalysisError('');
-            setPeriod(event.target.value);
-          }} aria-label="Período das análises">
-            <option value="week">Esta semana</option>
-            <option value="month">Este mês</option>
-          </select>
-          <button type="button" className="button button-secondary" onClick={analyzeHabits} disabled={isAnalyzing || isLoading}>
-            {isAnalyzing ? 'Analisando…' : 'Análise com IA'}
-          </button>
-        </div>
+        <select className="period-select" value={period} onChange={(event) => {
+          setIsLoading(true);
+          setError('');
+          setPeriod(event.target.value);
+        }} aria-label="Período das análises">
+          <option value="week">Esta semana</option>
+          <option value="month">Este mês</option>
+        </select>
       } />
       <ApiState loading={isLoading} error={error} empty={metrics && metrics.totals.scheduled === 0 ? 'Ainda não há hábitos programados neste período para calcular estatísticas.' : null}>
         <section className="metrics-grid">
@@ -2502,22 +2963,17 @@ function AnalyticsPage() {
             </div>
           )) : <p className="muted-state">Sem hábitos registrados neste intervalo.</p>}
         </section>
-        {analysisError ? <p className="error-text" role="alert">{analysisError}</p> : null}
-        {analysis ? (
-          <section className="card ai-analysis" aria-live="polite">
-            <h2>Insights para sua rotina</h2>
-            <p>{analysis.summary}</p>
-            {analysis.insights?.length ? <div><h3>O que os dados mostram</h3><ul>{analysis.insights.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div> : null}
-            {analysis.recommendations?.length ? <div><h3>Próximos passos</h3><ul>{analysis.recommendations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div> : null}
-            <p className="muted-state">Análise gerada em {new Date(analysis.generatedAt).toLocaleString('pt-BR')} com base nos hábitos e métricas deste período.</p>
-          </section>
-        ) : null}
       </ApiState>
     </AppLayout>
   );
 }
 
-function SettingsPage() {
+function OwnProfileRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={user?.username ? `/u/${encodeURIComponent(user.username)}` : '/app'} replace />;
+}
+
+function ProfilePage({ embedded = false, onClose, onProfileUpdated }) {
   const { user, setUser, accentColor, updateAccentColor } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [username, setUsername] = useState(user?.username || '');
@@ -2526,7 +2982,6 @@ function SettingsPage() {
   const [favoriteBookId, setFavoriteBookId] = useState(user?.favoriteBookId || '');
   const [books, setBooks] = useState([]);
   const [booksError, setBooksError] = useState('');
-  const [timezone, setTimezone] = useState(user?.timezone || 'America/Sao_Paulo');
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -2539,13 +2994,6 @@ function SettingsPage() {
   const [avatarError, setAvatarError] = useState('');
   const [bannerMessage, setBannerMessage] = useState('');
   const [bannerError, setBannerError] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [passwordCode, setPasswordCode] = useState('');
-  const [passwordCodeSent, setPasswordCodeSent] = useState(false);
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState('');
-  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => () => {
     if (cropRequest?.source) URL.revokeObjectURL(cropRequest.source);
@@ -2574,7 +3022,6 @@ function SettingsPage() {
         bio: bio.trim() || null,
         currentBookId: currentBookId || null,
         favoriteBookId: favoriteBookId || null,
-        timezone: timezone.trim(),
       });
       setUser(updatedUser);
       setName(updatedUser.name);
@@ -2582,8 +3029,8 @@ function SettingsPage() {
       setBio(updatedUser.bio || '');
       setCurrentBookId(updatedUser.currentBookId || '');
       setFavoriteBookId(updatedUser.favoriteBookId || '');
-      setTimezone(updatedUser.timezone);
       setMessage('Perfil atualizado.');
+      onProfileUpdated?.(updatedUser.username);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -2640,6 +3087,7 @@ function SettingsPage() {
       const { user: updatedUser } = await focuserApi.updateProfile({ [field]: result.secure_url });
       setUser(updatedUser);
       setImageMessage(type === 'banner' ? 'Banner atualizado.' : 'Foto de perfil atualizada.');
+      onProfileUpdated?.(updatedUser.username);
     } catch (uploadError) {
       setImageError(uploadError.message);
       throw uploadError;
@@ -2650,39 +3098,13 @@ function SettingsPage() {
 
   const activeBooks = books.filter((book) => book.isActive);
 
-  const submitPasswordChange = async (event) => {
-    event.preventDefault();
-    if (isChangingPassword) return;
-    setPasswordError('');
-    setPasswordMessage('');
-    setIsChangingPassword(true);
-    try {
-      if (!passwordCodeSent) {
-        await focuserApi.startPasswordChange({ currentPassword, newPassword });
-        setPasswordCodeSent(true);
-        setPasswordMessage('Enviamos um código para o e-mail da sua conta.');
-      } else {
-        const { user: updatedUser } = await focuserApi.verifyPasswordChange({ code: passwordCode, newPassword });
-        setUser(updatedUser);
-        setCurrentPassword('');
-        setNewPassword('');
-        setPasswordCode('');
-        setPasswordCodeSent(false);
-        setPasswordMessage('Senha alterada. As outras sessões foram encerradas.');
-      }
-    } catch (changeError) {
-      setPasswordError(changeError.message);
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
-
   const selectAccentColor = async (color) => {
     if (isSavingTheme) return;
     setThemeError('');
     setIsSavingTheme(true);
     try {
       await updateAccentColor(color);
+      onProfileUpdated?.(user?.username);
     } catch (updateError) {
       setThemeError(updateError.message);
     } finally {
@@ -2690,47 +3112,81 @@ function SettingsPage() {
     }
   };
 
-  return (
-    <AppLayout>
-      <PageHeader title="Perfil" subtitle="gerencie suas informações e segurança." />
+  const content = (
+    <>
+      {embedded ? (
+        <div className="profile-customization-heading">
+          <div>
+            <p className="eyebrow">Personalização</p>
+            <h2 id="profile-customization-title">Editar perfil</h2>
+            <p className="muted-state">Atualize as informações e a aparência do seu perfil público.</p>
+          </div>
+          <button type="button" className="icon-button" aria-label="Fechar personalização" onClick={onClose}><X size={19} /></button>
+        </div>
+      ) : (
+        <PageHeader title="Perfil" eyebrow="Personalização" subtitle="Personalize as informações e a aparência do seu perfil público." />
+      )}
       <form className="card profile-settings" onSubmit={saveProfile}>
-        <h3>Perfil</h3>
-        <div className="profile-banner-editor">
-          <div className="profile-banner-preview">
-            {user?.bannerUrl ? <img src={user.bannerUrl} alt="Banner do perfil" /> : <span>Seu banner</span>}
-          </div>
-          <div className="profile-avatar-actions">
-            <label className="button button-secondary profile-avatar-button">
-              {isUploadingBanner ? 'Enviando…' : 'Alterar banner'}
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'banner')} disabled={isUploadingBanner} />
-            </label>
-            <small>JPG, PNG ou WebP · até 5 MB</small>
-          </div>
+        <div className="profile-settings-section-heading">
+          <span className="eyebrow">identidade</span>
+          <h3>Seu perfil</h3>
+          <p className="muted-state">Escolha como as pessoas verão você na comunidade.</p>
         </div>
-        {bannerMessage ? <p className="success-text" role="status">{bannerMessage}</p> : null}
-        {bannerError ? <p className="error-text" role="alert">{bannerError}</p> : null}
-        <div className="profile-avatar-editor">
-          <div className="profile-avatar-preview">
-            {user?.avatarUrl ? <img src={user.avatarUrl} alt="Foto do perfil" /> : <User size={30} />}
-          </div>
-          <div className="profile-avatar-actions">
-            <label className="button button-secondary profile-avatar-button">
-              {isUploadingAvatar ? 'Enviando…' : 'Alterar foto'}
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'avatar')} disabled={isUploadingAvatar} />
-            </label>
-            <small>JPG, PNG ou WebP · até 5 MB</small>
-          </div>
+        <div className="profile-media-grid">
+          <section className="profile-media-card profile-banner-card" aria-label="Banner do perfil">
+            <div className="profile-banner-preview">
+              {user?.bannerUrl ? <img src={user.bannerUrl} alt="Prévia do banner do perfil" /> : <span>Seu banner</span>}
+              <span className="profile-media-overlay">Banner do perfil</span>
+            </div>
+            <div className="profile-media-card-footer">
+              <div className="profile-media-copy">
+                <strong>Imagem de capa</strong>
+                <small>JPG, PNG ou WebP · até 5 MB</small>
+              </div>
+              <label className="button button-secondary profile-avatar-button">
+                {isUploadingBanner ? 'Enviando…' : user?.bannerUrl ? 'Trocar' : 'Adicionar'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'banner')} disabled={isUploadingBanner} />
+              </label>
+            </div>
+            {bannerMessage ? <p className="success-text" role="status">{bannerMessage}</p> : null}
+            {bannerError ? <p className="error-text" role="alert">{bannerError}</p> : null}
+          </section>
+          <section className="profile-media-card profile-avatar-card" aria-label="Foto do perfil">
+            <div className="profile-avatar-preview">
+              {user?.avatarUrl ? <img src={user.avatarUrl} alt="Foto do perfil" /> : <User size={30} />}
+            </div>
+            <div className="profile-media-card-footer">
+              <div className="profile-media-copy">
+                <strong>Foto de perfil</strong>
+                <small>JPG, PNG ou WebP · até 5 MB</small>
+              </div>
+              <label className="button button-secondary profile-avatar-button">
+                {isUploadingAvatar ? 'Enviando…' : 'Trocar'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => uploadProfileImage(event, 'avatar')} disabled={isUploadingAvatar} />
+              </label>
+            </div>
+            {avatarMessage ? <p className="success-text" role="status">{avatarMessage}</p> : null}
+            {avatarError ? <p className="error-text" role="alert">{avatarError}</p> : null}
+          </section>
         </div>
-        {avatarMessage ? <p className="success-text" role="status">{avatarMessage}</p> : null}
-        {avatarError ? <p className="error-text" role="alert">{avatarError}</p> : null}
-        <label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength="80" required /></label>
-        <label>
-          <span>Nome de usuário</span>
-          <div className="profile-username-input"><span aria-hidden="true">@</span><input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} minLength="3" maxLength="30" pattern="[a-zA-Z0-9._]{3,30}" placeholder="seu.usuario" /></div>
-          <small className="muted-state">Seu identificador público; use letras, números, pontos ou sublinhados.</small>
-        </label>
-        <label><span>Bio</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength="500" rows="4" placeholder="Conte um pouco sobre você." /></label>
-        <small className="muted-state">{bio.length}/500 caracteres</small>
+        <div className="profile-settings-section-heading profile-info-heading">
+          <span className="eyebrow">informações</span>
+          <h3>Detalhes públicos</h3>
+        </div>
+        <div className="profile-fields-grid">
+          <label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength="80" required /></label>
+          <label>
+            <span>Nome de usuário</span>
+            <div className="profile-username-input"><span aria-hidden="true">@</span><input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} minLength="3" maxLength="30" pattern="[a-zA-Z0-9._]{3,30}" placeholder="seu.usuario" /></div>
+            <small className="muted-state">Seu identificador público; use letras, números, pontos ou sublinhados.</small>
+          </label>
+          <label className="profile-bio-field"><span>Bio</span><textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength="500" rows="4" placeholder="Conte um pouco sobre você." /><small className="muted-state profile-bio-count">{bio.length}/500 caracteres</small></label>
+        </div>
+        <div className="profile-settings-section-heading profile-books-heading">
+          <span className="eyebrow">leituras</span>
+          <h3>Livros no perfil</h3>
+          <p className="muted-state">Destaque o que está lendo e escolha seu livro favorito.</p>
+        </div>
         <div className="profile-book-pickers">
           <ProfileBookPicker
             id="current-book"
@@ -2751,26 +3207,20 @@ function SettingsPage() {
         </div>
         {booksError ? <p className="error-text" role="alert">Não foi possível carregar seus livros: {booksError}</p> : null}
         {!booksError && books.length === 0 ? <p className="muted-state">Ainda não há livros cadastrados. <Link to="/app/leituras">Adicione livros na área de leituras.</Link></p> : null}
-        <label><span>Fuso horário IANA</span><input value={timezone} onChange={(event) => setTimezone(event.target.value)} maxLength="64" placeholder="America/Sao_Paulo" required /></label>
-        <p className="muted-state">O fuso horário define em qual dia seus hábitos e check-ins são contabilizados.</p>
-        {message ? <p className="success-text" role="status">{message}</p> : null}
-        {error ? <p className="error-text" role="alert">{error}</p> : null}
-        <button type="submit" className="button button-primary" disabled={isSaving}>{isSaving ? 'Salvando…' : 'Salvar perfil'}</button>
-      </form>
-      <form className="card profile-settings password-settings" onSubmit={submitPasswordChange}>
-        <h3>Alterar senha</h3>
-        <p className="muted-state">Para confirmar, vamos enviar um código de segurança para {user?.email}.</p>
-        {!passwordCodeSent ? <label><span>Senha atual</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} minLength="8" required /></label> : null}
-        <label><span>Nova senha</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength="8" maxLength="128" required /></label>
-        {passwordCodeSent ? <label><span>Código de verificação</span><input value={passwordCode} onChange={(event) => setPasswordCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength="6" required /></label> : null}
-        {passwordMessage ? <p className="success-text" role="status">{passwordMessage}</p> : null}
-        {passwordError ? <p className="error-text" role="alert">{passwordError}</p> : null}
-        <button type="submit" className="button button-primary" disabled={isChangingPassword}>{isChangingPassword ? 'Aguarde…' : passwordCodeSent ? 'Confirmar nova senha' : 'Enviar código de confirmação'}</button>
-        {passwordCodeSent ? <button type="button" className="button button-secondary" disabled={isChangingPassword} onClick={() => { setPasswordCodeSent(false); setPasswordCode(''); setPasswordMessage(''); setPasswordError(''); }}>Cancelar</button> : null}
+        <div className="profile-save-footer">
+          <div>
+            {message ? <p className="success-text" role="status">{message}</p> : <small>As alterações ficam visíveis no seu perfil público.</small>}
+            {error ? <p className="error-text" role="alert">{error}</p> : null}
+          </div>
+          <button type="submit" className="button button-primary" disabled={isSaving}>{isSaving ? 'Salvando…' : 'Salvar perfil'}</button>
+        </div>
       </form>
       <section className="card theme-settings" aria-labelledby="accent-color-heading">
-        <h3 id="accent-color-heading">Cor de destaque</h3>
-        <p className="muted-state">Personalize botões e destaques. A preferência fica salva na sua conta.</p>
+        <div className="profile-settings-section-heading">
+          <span className="eyebrow">aparência</span>
+          <h3 id="accent-color-heading">Cor de destaque</h3>
+          <p className="muted-state">Personalize botões e destaques do seu perfil. A preferência fica salva na sua conta.</p>
+        </div>
         <div className="accent-options" role="group" aria-label="Escolha uma cor de destaque">
           {ACCENT_COLORS.map((color) => (
             <button
@@ -2804,7 +3254,6 @@ function SettingsPage() {
         {isSavingTheme ? <p className="muted-state" role="status">Salvando preferência…</p> : null}
         {themeError ? <p className="error-text" role="alert">{themeError}</p> : null}
       </section>
-      <p className="muted-state settings-note">Preferências de notificações e bloqueio ainda não são suportadas pela API.</p>
       {cropRequest ? (
         <ProfileImageCropper
           source={cropRequest.source}
@@ -2813,6 +3262,114 @@ function SettingsPage() {
           onApply={(croppedImage) => uploadCroppedProfileImage(croppedImage, cropRequest.type)}
         />
       ) : null}
+    </>
+  );
+  return embedded
+    ? <div className="profile-customization-content">{content}</div>
+    : <AppLayout>{content}</AppLayout>;
+}
+
+function AccountSettingsPage() {
+  const { user, setUser } = useAuth();
+  const [timezone, setTimezone] = useState(user?.timezone || 'America/Sao_Paulo');
+  const [isSavingTimezone, setIsSavingTimezone] = useState(false);
+  const [timezoneMessage, setTimezoneMessage] = useState('');
+  const [timezoneError, setTimezoneError] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordCode, setPasswordCode] = useState('');
+  const [passwordCodeSent, setPasswordCodeSent] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const saveTimezone = async (event) => {
+    event.preventDefault();
+    if (isSavingTimezone) return;
+    setTimezoneMessage('');
+    setTimezoneError('');
+    setIsSavingTimezone(true);
+    try {
+      const { user: updatedUser } = await focuserApi.updateProfile({ timezone: timezone.trim() });
+      setUser(updatedUser);
+      setTimezone(updatedUser.timezone);
+      setTimezoneMessage('Fuso horário atualizado.');
+    } catch (error) {
+      setTimezoneError(error.message);
+    } finally {
+      setIsSavingTimezone(false);
+    }
+  };
+
+  const submitPasswordChange = async (event) => {
+    event.preventDefault();
+    if (isChangingPassword) return;
+    setPasswordError('');
+    setPasswordMessage('');
+    setIsChangingPassword(true);
+    try {
+      if (!passwordCodeSent) {
+        await focuserApi.startPasswordChange({ currentPassword, newPassword });
+        setPasswordCodeSent(true);
+        setPasswordMessage('Enviamos um código para o e-mail da sua conta.');
+      } else {
+        const { user: updatedUser } = await focuserApi.verifyPasswordChange({ code: passwordCode, newPassword });
+        setUser(updatedUser);
+        setCurrentPassword('');
+        setNewPassword('');
+        setPasswordCode('');
+        setPasswordCodeSent(false);
+        setPasswordMessage('Senha alterada. As outras sessões foram encerradas.');
+      }
+    } catch (error) {
+      setPasswordError(error.message);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  return (
+    <AppLayout>
+      <PageHeader title="Configurações" eyebrow="Conta" subtitle="Gerencie a segurança e as preferências da sua conta." />
+      <div className="account-settings-stack">
+        <form className="card profile-settings account-settings-card" onSubmit={saveTimezone}>
+          <div>
+            <p className="eyebrow">Preferências</p>
+            <h2>Fuso horário</h2>
+            <p className="muted-state">Define em qual dia seus hábitos e check-ins são contabilizados.</p>
+          </div>
+          <label>
+            <span>Fuso horário IANA</span>
+            <input value={timezone} onChange={(event) => setTimezone(event.target.value)} maxLength="64" placeholder="America/Sao_Paulo" required />
+          </label>
+          {timezoneMessage ? <p className="success-text" role="status">{timezoneMessage}</p> : null}
+          {timezoneError ? <p className="error-text" role="alert">{timezoneError}</p> : null}
+          <button type="submit" className="button button-primary" disabled={isSavingTimezone}>{isSavingTimezone ? 'Salvando…' : 'Salvar preferência'}</button>
+        </form>
+
+        <form className="card profile-settings account-settings-card" onSubmit={submitPasswordChange}>
+          <div>
+            <p className="eyebrow">Segurança</p>
+            <h2>Alterar senha</h2>
+            <p className="muted-state">Para confirmar a alteração, enviaremos um código de segurança para {user?.email}.</p>
+          </div>
+          {!passwordCodeSent ? <label><span>Senha atual</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} minLength="8" required /></label> : null}
+          <label><span>Nova senha</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength="8" maxLength="128" required /></label>
+          {passwordCodeSent ? <label><span>Código de verificação</span><input value={passwordCode} onChange={(event) => setPasswordCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength="6" required /></label> : null}
+          {passwordMessage ? <p className="success-text" role="status">{passwordMessage}</p> : null}
+          {passwordError ? <p className="error-text" role="alert">{passwordError}</p> : null}
+          <button type="submit" className="button button-primary" disabled={isChangingPassword}>{isChangingPassword ? 'Aguarde…' : passwordCodeSent ? 'Confirmar nova senha' : 'Enviar código de confirmação'}</button>
+          {passwordCodeSent ? <button type="button" className="button button-secondary" disabled={isChangingPassword} onClick={() => { setPasswordCodeSent(false); setPasswordCode(''); setPasswordMessage(''); setPasswordError(''); }}>Cancelar</button> : null}
+        </form>
+
+        <section className="card account-settings-card account-settings-note">
+          <div>
+            <p className="eyebrow">Em breve</p>
+            <h2>Notificações e bloqueio</h2>
+            <p className="muted-state">Essas preferências ainda não são suportadas pela API.</p>
+          </div>
+        </section>
+      </div>
     </AppLayout>
   );
 }
@@ -2881,6 +3438,7 @@ function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/inicio" element={<LandingPage />} />
           <Route path="/recursos" element={<ResourcesPage />} />
           <Route path="/precos" element={<Navigate to="/" replace />} />
           <Route path="/login" element={<LoginPage />} />
@@ -2892,10 +3450,11 @@ function App() {
           <Route path="/app/habitos" element={<RequireAuth><HabitsPage /></RequireAuth>} />
           <Route path="/app/metas" element={<RequireAuth><GoalsPage /></RequireAuth>} />
           <Route path="/app/leituras" element={<RequireAuth><ReadingLibrary /></RequireAuth>} />
-          <Route path="/app/academia" element={<RequireAuth><AppLayout><AcademyPage /></AppLayout></RequireAuth>} />
+          <Route path="/app/academia" element={<RequireAuth><AcademyPage /></RequireAuth>} />
+          <Route path="/app/amigos" element={<RequireAuth><FriendsPage /></RequireAuth>} />
           <Route path="/app/analises" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
-          <Route path="/app/perfil" element={<RequireAuth><SettingsPage /></RequireAuth>} />
-          <Route path="/app/configuracoes" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+          <Route path="/app/perfil" element={<RequireAuth><OwnProfileRedirect /></RequireAuth>} />
+          <Route path="/app/configuracoes" element={<RequireAuth><AccountSettingsPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AuthProvider>

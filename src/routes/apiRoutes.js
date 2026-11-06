@@ -165,6 +165,13 @@ function clearAuthCookie(res) {
     });
 }
 
+function authTokenForClient(req, token) {
+    return req.get("X-Focuser-Platform") === "tauri"
+        || req.get("X-Focuser-Client") === "tauri"
+        ? { token }
+        : {};
+}
+
 function parseQueryObject(query, allowedKeys) {
     const keys = Object.keys(query);
     const unknown = keys.filter((key) => !allowedKeys.includes(key));
@@ -374,8 +381,9 @@ router.post("/auth/login", asyncHandler(async (req, res) => {
         await issueAuthCode(user, "login");
         return sendSuccess(res, { twoFactorRequired: true });
     }
-    setAuthCookie(res, createAuthToken(user));
-    return sendSuccess(res, { user: publicUser(user) });
+    const token = createAuthToken(user);
+    setAuthCookie(res, token);
+    return sendSuccess(res, { user: publicUser(user), ...authTokenForClient(req, token) });
 }));
 
 router.post("/auth/registration-avatar-signature", asyncHandler(async (_req, res) => {
@@ -461,7 +469,7 @@ router.post("/auth/verify-login", asyncHandler(async (req, res) => {
     });
     if (!changed.count) throw invalid();
     setAuthCookie(res, token);
-    return sendSuccess(res, { user: publicUser(user) });
+    return sendSuccess(res, { user: publicUser(user), ...authTokenForClient(req, token) });
 }));
 
 router.post("/auth/logout", asyncHandler(async (req, res) => {
@@ -680,8 +688,9 @@ router.post("/users/me/password-change/verify", requireAuth, asyncHandler(async 
     });
     if (!changed.count) throw invalid();
     const refreshedUser = await prisma.user.findUnique({ where: { id: user.id } });
-    setAuthCookie(res, createAuthToken(refreshedUser));
-    return sendSuccess(res, { user: publicUser(refreshedUser) });
+    const token = createAuthToken(refreshedUser);
+    setAuthCookie(res, token);
+    return sendSuccess(res, { user: publicUser(refreshedUser), ...authTokenForClient(req, token) });
 }));
 
 router.post("/habits", requireAuth, asyncHandler(async (req, res) => {
