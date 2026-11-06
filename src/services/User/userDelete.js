@@ -8,4 +8,4 @@ export async function userDelete(userID) {
     } catch (error) {
         throw new Error("Erro ao deletar o usuário!", { cause: error });
     }
-} 
+}

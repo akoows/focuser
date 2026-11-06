@@ -5,7 +5,7 @@ Express API backed by Prisma and MongoDB. Responses use `{ success, data }` on s
 ## Run locally
 
 1. Copy `.env.example` to `.env` and set `DATABASE_URL` to a MongoDB replica set and `JWT_SECRET` to a random secret of at least 32 bytes.
-2. Run `npm run db:generate`, then `npx prisma db push` to apply the MongoDB collection changes. `db push` is an explicit deployment step and is not run by the API or test suite.
+2. Run `npm run db:generate`, then `npm run db:normalize-legacy-usernames` to safely assign internal placeholders to older accounts whose username is missing. This preserves those accounts and allows MongoDB to create the unique username index. Then run `npx prisma db push` to apply the MongoDB collection changes. `db push` is an explicit deployment step and is not run by the API or test suite.
 3. Start the API with `npm start`.
 
 `GOOGLE_BOOKS_API_KEY` enables Google Books results in addition to Open Library's public search. Open Library is used without a key. If every configured book-search provider is unavailable, lookup returns `502 BOOK_LOOKUP_UNAVAILABLE`; partial provider outages are reported in the `sources` object. `GROQ_API_KEY` optionally enables a book-edition recommendation; without it, lookup returns regular search results with no AI recommendation. Set `GROQ_MODEL` to override the default model.
@@ -18,6 +18,7 @@ All routes are under `/api`; mutating requests from the web client must send `X-
 
 - Authentication: `POST /auth/register`, `/auth/login`, `/auth/verify-email`, `/auth/resend-verification`, `/auth/verify-login`, and `/auth/logout`; `GET /auth/me`. Accounts verify their email and confirm logins with one-time codes; local `@focuser.dev` accounts bypass email codes in development/test.
 - Profile: `GET /users/me`, `PATCH /users/me`, `GET /users/by-username/:username`, signed avatar/banner uploads, and email-confirmed password changes.
+- Friends: `GET /friends`, `GET /friends/status/:username`, `POST /friends/requests`, `POST /friends/requests/:id/accept`, `DELETE /friends/requests/:id`, and `DELETE /friends/:id`. Friend lists expose only public profile fields.
 - Goals: `GET|POST /goals`, `PATCH|DELETE /goals/:id`, `POST /goals/:id/progress`.
 - Focus: `GET /focus-sessions/active`, `GET|POST /focus-sessions`, and `POST /focus-sessions/:id/{pause,resume,complete,cancel}`.
 - Reading: `GET /reading/today`, `GET|POST /reading/books`, `PATCH|DELETE /reading/books/:id`, `POST /reading/books/:id/logs`, `POST /reading/isbn-lookup`.

@@ -62,6 +62,14 @@ export const updateUserSchema = z.object({
     favoriteBookId: objectId.nullable().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "Informe ao menos um campo.");
 
+export const publicUsernameParamSchema = z.object({
+    username,
+}).strict();
+
+export const friendRequestCreateSchema = z.object({
+    username,
+}).strict();
+
 export const passwordChangeStartSchema = z.object({
     currentPassword: z.string().min(1).max(128),
     newPassword: password,

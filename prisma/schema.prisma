@@ -40,6 +40,29 @@
     activeWorkoutSessionId String? @db.ObjectId
     createdAt    DateTime @default(now())
     updatedAt    DateTime @updatedAt
+    sentFriendships     Friendship[] @relation("FriendshipRequester")
+    receivedFriendships Friendship[] @relation("FriendshipAddressee")
+  }
+
+  enum FriendshipStatus {
+    PENDING
+    ACCEPTED
+  }
+
+  model Friendship {
+    id          String           @id @default(auto()) @map("_id") @db.ObjectId
+    pairKey     String           @unique
+    requesterId String           @db.ObjectId
+    addresseeId String           @db.ObjectId
+    requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+    addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+    status      FriendshipStatus @default(PENDING)
+    createdAt   DateTime         @default(now())
+    updatedAt   DateTime         @updatedAt
+
+    @@unique([requesterId, addresseeId])
+    @@index([addresseeId, status, createdAt])
+    @@index([requesterId, status, createdAt])
   }
 
   model PendingProfileUpload {

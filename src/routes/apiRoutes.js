@@ -11,6 +11,7 @@ import { isAssetUrlInFolder, profileImageUploadSignature } from "../services/clo
 import { createRegistrationUploadSignature } from "../services/profileUploadService.js";
 import { categorizeHabit } from "../services/habitCategoryService.js";
 import { analyzeHabitMetrics } from "../services/aiAnalysisService.js";
+import { friendService } from "../services/friendService.js";
 import {
     addDateKeyDays,
     dateKeyInTimezone,
@@ -37,6 +38,8 @@ import {
     passwordChangeStartSchema,
     passwordChangeVerifySchema,
     aiAnalyzeSchema,
+    friendRequestCreateSchema,
+    publicUsernameParamSchema,
 } from "../validators/index.js";
 
 const router = Router();
@@ -475,6 +478,35 @@ router.post("/auth/logout", asyncHandler(async (req, res) => {
 
 router.get("/auth/me", requireAuth, (req, res) => sendSuccess(res, { user: publicUser(req.user) }));
 router.get("/users/me", requireAuth, (req, res) => sendSuccess(res, { user: publicUser(req.user) }));
+
+router.get("/friends", requireAuth, asyncHandler(async (req, res) => {
+    return sendSuccess(res, await friendService.list(req.user.id));
+}));
+
+router.get("/friends/status/:username", requireAuth, asyncHandler(async (req, res) => {
+    const { username } = parse(publicUsernameParamSchema, req.params);
+    return sendSuccess(res, { relationship: await friendService.status(req.user.id, username) });
+}));
+
+router.post("/friends/requests", requireAuth, asyncHandler(async (req, res) => {
+    const { username } = parse(friendRequestCreateSchema, req.body);
+    return sendSuccess(res, { relationship: await friendService.sendRequest(req.user.id, username) }, 201);
+}));
+
+router.post("/friends/requests/:id/accept", requireAuth, asyncHandler(async (req, res) => {
+    const requestId = parseObjectId(req.params.id);
+    return sendSuccess(res, { relationship: await friendService.respondToRequest(req.user.id, requestId) });
+}));
+
+router.delete("/friends/requests/:id", requireAuth, asyncHandler(async (req, res) => {
+    const requestId = parseObjectId(req.params.id);
+    return sendSuccess(res, await friendService.removeRequest(req.user.id, requestId));
+}));
+
+router.delete("/friends/:id", requireAuth, asyncHandler(async (req, res) => {
+    const friendId = parseObjectId(req.params.id);
+    return sendSuccess(res, await friendService.removeFriend(req.user.id, friendId));
+}));
 
 router.get("/users/by-username/:username", asyncHandler(async (req, res) => {
     const username = req.params.username.trim().toLowerCase();

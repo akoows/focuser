@@ -10,9 +10,11 @@ import {
     readingBookUpdateSchema,
     readingLogCreateSchema,
     aiAnalyzeSchema,
+    friendRequestCreateSchema,
     passwordChangeStartSchema,
     passwordChangeVerifySchema,
     registerSchema,
+    publicUsernameParamSchema,
     updateUserSchema,
 } from "./index.js";
 
@@ -57,6 +59,13 @@ test("one-time code and AI analysis validators reject malformed requests", () =>
     assert.throws(() => parse(passwordChangeVerifySchema, { code: "123", newPassword: "new-password" }),
         { status: 400, code: "VALIDATION_ERROR" });
     assert.deepEqual(parse(aiAnalyzeSchema, {}), { period: "month" });
+});
+
+test("friend validators normalize usernames and reject unknown fields", () => {
+    assert.deepEqual(parse(friendRequestCreateSchema, { username: "Bob.Name" }), { username: "bob.name" });
+    assert.deepEqual(parse(publicUsernameParamSchema, { username: "Alice_1" }), { username: "alice_1" });
+    assert.throws(() => parse(friendRequestCreateSchema, { username: "x", userId: "forged" }),
+        { status: 400, code: "VALIDATION_ERROR" });
 });
 
 test("goal validators enforce numeric bounds and only accept web fields", () => {
