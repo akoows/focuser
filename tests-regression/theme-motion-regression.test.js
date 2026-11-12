@@ -28,7 +28,7 @@ test('app navigation transitions have reduced-motion support', () => {
 
 test('both appearance interfaces consume the same accent presets', () => {
   const settings = readSource('../src/pages/settings/AppearanceSettings.jsx');
-  const profile = readSource('../src/pages/ProfilePage.jsx');
+  const profile = readSource('../src/pages/profile/ProfilePage.jsx');
   const presets = readSource('../src/pages/settings/appThemeSettings.js');
 
   assert.match(settings, /APP_ACCENT_PRESETS\.map/);

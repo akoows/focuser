@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const profileSource = readFileSync(new URL('../src/pages/ProfilePage.jsx', import.meta.url), 'utf8');
+const profileSource = readFileSync(new URL('../src/pages/profile/ProfilePage.jsx', import.meta.url), 'utf8');
 const readingSource = readFileSync(new URL('../src/pages/reading/ReadingPageView.jsx', import.meta.url), 'utf8');
 
 test('reading page keeps its initial loading state and still refreshes on later user actions', () => {

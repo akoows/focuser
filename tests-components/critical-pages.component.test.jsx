@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App.jsx';
-import GoalsPage from '../src/pages/GoalsPage.jsx';
+import GoalsPage from '../src/pages/goals/GoalsPage.jsx';
 import ReadingPageView from '../src/pages/reading/ReadingPageView.jsx';
 import HabitList from '../src/pages/habits/HabitList.jsx';
 import { focuserApi } from '../src/services/focuserApi.js';

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const goalsPageSource = readFileSync(new URL('../src/pages/GoalsPage.jsx', import.meta.url), 'utf8');
+const goalsPageSource = readFileSync(new URL('../src/pages/goals/GoalsPage.jsx', import.meta.url), 'utf8');
 
 test('goal edit, progress and archive conflicts reload current data and show recovery guidance', () => {
   assert.equal((goalsPageSource.match(/recoverGoalConflict\(requestError, loadGoals, setError/g) || []).length, 3);

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createCalendarDayLoader } from '../src/pages/academy/calendarDayLoader.js';
 
-const componentSource = readFileSync(new URL('../src/pages/AcademyPage.jsx', import.meta.url), 'utf8');
+const componentSource = readFileSync(new URL('../src/pages/academy/AcademyPage.jsx', import.meta.url), 'utf8');
 
 test('calendar only applies the latest selected date and ignores responses after closing details', async () => {
   let resolveFirst;

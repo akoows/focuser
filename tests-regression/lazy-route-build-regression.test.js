@@ -29,11 +29,11 @@ test('Vite emits separate dynamic bundles for lazy page routes', async () => {
     assert.ok(appEntry, 'the Vite manifest includes the HTML application entry');
 
     const expectedLazyModules = [
-      'src/pages/AcademyPage.jsx',
+      'src/pages/academy/AcademyPage.jsx',
       'src/pages/habits/HabitsPage.jsx',
       'src/pages/reading/ReadingPageView.jsx',
-      'src/pages/GoalsPage.jsx',
-      'src/pages/ProfilePage.jsx',
+      'src/pages/goals/GoalsPage.jsx',
+      'src/pages/profile/ProfilePage.jsx',
     ];
     const dynamicImports = new Set(appEntry.dynamicImports || []);
     for (const moduleId of expectedLazyModules) {

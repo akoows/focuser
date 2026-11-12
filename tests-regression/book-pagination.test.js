@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { loadBookPages } from '../src/pages/reading/bookPagination.js';
 
 const readingSource = readFileSync(new URL('../src/pages/reading/ReadingPageView.jsx', import.meta.url), 'utf8');
-const profileSource = readFileSync(new URL('../src/pages/ProfilePage.jsx', import.meta.url), 'utf8');
+const profileSource = readFileSync(new URL('../src/pages/profile/ProfilePage.jsx', import.meta.url), 'utf8');
 
 test('all 500 books remain reachable through the same filtered pages and the final item is preserved', async () => {
   const allBooks = Array.from({ length: 500 }, (_, index) => ({

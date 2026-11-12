@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { loadAcademySections, readWorkoutTimer, workoutSessionStorageKey } from '../src/pages/academy/academyDataLoader.js';
 
-const componentSource = readFileSync(new URL('../src/pages/AcademyPage.jsx', import.meta.url), 'utf8');
+const componentSource = readFileSync(new URL('../src/pages/academy/AcademyPage.jsx', import.meta.url), 'utf8');
 
 test('a failed academy section does not discard the active workout or other fulfilled data', async () => {
   const api = { gym: {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, MoreHorizontal, Pencil, Plus, Target, Trash2 } from 'lucide-react';
 import { focuserApi } from '../services/focuserApi';
-import { recoverGoalConflict } from './goals/goalConflictRecovery';
+import { recoverGoalConflict } from './goalConflictRecovery';
 
 export default function GoalsPage({ AppLayout, PageHeader, ApiState }) {
   const [goals, setGoals] = useState([]);

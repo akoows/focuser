@@ -40,11 +40,11 @@ import './MotionEnhancements.css';
 import './UnifiedUI.css';
 import './MotionDetails.css';
 
-const AcademyPageModule = lazy(() => import('./pages/AcademyPage.jsx'));
+const AcademyPageModule = lazy(() => import('./pages/academy/AcademyPage.jsx'));
 const HabitsPageModule = lazy(() => import('./pages/habits/HabitsPage.jsx'));
-const GoalsPageModule = lazy(() => import('./pages/GoalsPage.jsx'));
+const GoalsPageModule = lazy(() => import('./pages/goals/GoalsPage.jsx'));
 const ReadingPageModule = lazy(() => import('./pages/reading/ReadingPageView.jsx'));
-const ProfilePageModule = lazy(() => import('./pages/ProfilePage.jsx'));
+const ProfilePageModule = lazy(() => import('./pages/profile/ProfilePage.jsx'));
 
 const AuthContext = createContext(null);
 const createFocusStatusSessionId = () => window.crypto?.randomUUID?.()

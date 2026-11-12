@@ -28,8 +28,8 @@ import {
 } from 'lucide-react';
 import NumberInput from '../components/NumberInput';
 import { focuserApi } from '../services/focuserApi';
-import { loadAcademySections, readWorkoutTimer, workoutSessionStorageKey } from './academy/academyDataLoader';
-import { createCalendarDayLoader } from './academy/calendarDayLoader';
+import { loadAcademySections, readWorkoutTimer, workoutSessionStorageKey } from './academyDataLoader';
+import { createCalendarDayLoader } from './calendarDayLoader';
 import './AcademyPage.css';
 
 const EMPTY_EXERCISE = { name: '', plannedSets: 3, repTarget: '8-12', restSeconds: 90 };

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { User, X } from 'lucide-react';
 import { focuserApi } from '../services/focuserApi';
-import { appendUniqueBooks } from './reading/bookPagination';
-import { APP_ACCENT_PRESETS } from './settings/appThemeSettings';
+import { appendUniqueBooks } from '../reading/bookPagination';
+import { APP_ACCENT_PRESETS } from '../settings/appThemeSettings';
 
 const READING_BOOK_PAGE_SIZE = 50;
 
