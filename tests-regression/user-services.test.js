@@ -1,14 +1,14 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../src/lib/prisma.js';
-import { userCreate } from '../src/services/User/userCreate.js';
-import { userEdit } from '../src/services/User/userEdit.js';
-import { userLogin } from '../src/services/User/userLogin.js';
-import { userPerID } from '../src/services/User/userPerID.js';
-import { userList } from '../src/services/User/userList.js';
-import { userDelete } from '../src/services/User/userDelete.js';
+import { userCreate } from '../src/services/users/userCreate.js';
+import { userEdit } from '../src/services/users/userEdit.js';
+import { userLogin } from '../src/services/users/userLogin.js';
+import { userPerID } from '../src/services/users/userPerID.js';
+import { userList } from '../src/services/users/userList.js';
+import { userDelete } from '../src/services/users/userDelete.js';
 import { createAuthToken } from '../src/middlewares/auth.js';
 
 function mockUser(t, method, implementation) {
